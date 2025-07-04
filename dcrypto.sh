@@ -1,0 +1,862 @@
+#!/bin/sh
+
+
+if [ "$(id -u)" -ne 0 ]; then
+    echoe "User must be root"
+    exit 1
+fi
+
+DC_SSLCFG=""
+VERBOSE=0
+DEBUG=0
+DC_USER="$(whoami)"
+
+DC_DIR=/etc/dcrypto
+DC_CA="$DC_DIR/ca"
+DC_CERT="$DC_DIR/cert"
+DC_KEY="$DC_CERT/private"
+DC_CRL="$DC_DIR/crl"
+DC_DB="$DC_DIR/db.json"
+# shellcheck disable=SC2034
+DC_CAKEY="$DC_CA/private"
+# shellcheck disable=SC2034
+DC_GPGHOME="$DC_DIR/gpg_keyring"
+
+
+# Source library files
+. ./lib/db.sh
+. ./lib/helper.sh
+. ./lib/ssl.sh
+
+if [ ! -d $DC_DIR ]; then
+    _setup_dcrypto_directory
+fi
+
+help() {
+    echo "Usage: $0 <command> [subcommand] [options]"
+    echo ""
+    echo "A POSIX shell script to manage SSL certificates and GPG keys with strong encryption"
+    echo "and Argon2id key derivation for people who always forget OpenSSL syntax."
+    echo ""
+    echo "SSL COMMANDS:"
+    echo "============="
+    echo ""
+    echo "  ssl create-ca                       Create a Root or Intermediate Certificate Authority"
+    echo "    --name <string>                     (Required) Common Name (CN) for the CA"
+    echo "    --outcert <import_file>                    (Optional) Output certificate import_file (default: ca.pem or intermediate-ca.pem)"
+    echo "    --outkey <import_file>                     (Optional) Output private key import_file (default: ca-key.pem or intermediate-ca-key.pem)"
+    echo "    --intermediate                      (Optional) Create intermediate CA instead of root CA"
+    echo "    --password <import_file|string>            (Optional) Password for private key encryption. Default: Argon2id"
+    echo "    --email <string>                    (Optional) Email address for certificate"
+    echo "    --country <string>                  (Optional) Country code (e.g., US, DE)"
+    echo "    --state <string>                    (Optional) State or province (ST)"
+    echo "    --locality <string>                 (Optional) City or locality (C)"
+    echo "    --org <string>                      (Optional) Organization name (O)"
+    echo "    --orgunit <string>                  (Optional) Organizational unit (OU)"
+    echo "    --days <number>                     (Optional) Certificate validity in days (default: 3650)"
+    echo ""
+    echo "  ssl create-key                      Create a private key with optional Argon2id encryption"
+    echo "    --out <import_file|stdout>                 (Optional) Output import_file (default: $DC_KEY/key.pem)"
+    echo "    --password <import_file|string>            (Optional) Password for encryption (enables Argon2id)"
+    echo "    --salt <import_file|string>                (Optional) Custom salt (auto-generated if not provided)"
+    echo "    --user <string>                     (Optional) Makes key accessible for user group"
+    echo ""
+    echo "  ssl create-csr                      Create a Certificate Signing Request"
+    echo "    --domains <string>                  (Required for server certs) Comma-separated domains/IPs"
+    echo "    --key <import_file>                        (Required) Private key import_file"
+    echo "    --cn <string>                       (Required for client certs) Common Name"
+    echo "    --out <import_file>                        (Optional) Output CSR import_file"
+    echo "    --server                            (Optional) Creates CSR for a server certificate. Default: false"
+    echo "    --client                            (Optional) Creates CSR for a client certificate. Default: true"
+    echo "    --pass <import_file|string>                (Optional) Private key password"
+    echo "    --email <string>                    (Optional) Email address"
+    echo "    --country <string>                  (Optional) Country code"
+    echo "    --state <string>                    (Optional) State or province"
+    echo "    --locality <string>                 (Optional) City or locality"
+    echo "    --org <string>                      (Optional) Organization name"
+    echo "    --orgunit <string>                  (Optional) Organizational unit"
+    echo "    --crldist <url>                     (Optional) CRL distribution point URL"
+    echo ""
+    echo "  ssl sign-csr                        Sign a Certificate Signing Request"
+    echo "    --csr <import_file>                        (Required) CSR import_file to sign"
+    echo "    --ca-cert <import_file>                    (Optional) CA certificate import_file. Default: defaultCA"
+    echo "    --ca-key <import_file>                     (Optional) CA private key import_file. Default: defaultCA"
+    echo "    --out <import_file>                        (Optional) Output certificate import_file"
+    echo "    --ca-pass <import_file|string>             (Optional) CA private key password"
+    echo "    --days <number>                     (Optional) Certificate validity in days"
+    echo "    --keep-csr                          (Optional) Keep CSR import_file after signing"
+    echo "    --keep-cfg                          (Optional) Keep configuration import_file after signing"
+    echo ""
+    echo "  ssl verify-cert                     Verify certificate signature and validity"
+    echo "    --cert <import_file>                       (Required) Certificate import_file to verify"
+    echo "    --ca <import_file>                         (Required) CA certificate for verification"
+    echo "    --chain <import_file>                      (Optional) Certificate chain import_file"
+    echo ""
+    echo "  ssl list-ca                         List Certificate Authorities"
+    echo "    --type <all|root|intermediate>      (Optional) CA type to list (default: all)"
+    echo "    --verbose                           (Optional) Show detailed information"
+    echo ""
+    echo "  ssl show-ca                         Show detailed CA information"
+    echo "    --index <index>                     (Required) CA index to show"
+    echo "    --type <root|intermediate>          (Optional) CA type (default: root)"
+    echo "    --cert                              (Optional) Show certificate details"
+    echo ""
+    echo "  ssl encrypt                         Encrypt data using certificate"
+    echo "    --cert <import_file>                       (Required) Certificate import_file for encryption"
+    echo "    --in <import_file>                         (Required) Input import_file to encrypt"
+    echo "    --out <import_file>                        (Required) Output encrypted import_file"
+    echo ""
+    echo "  ssl decrypt                         Decrypt data using private key"
+    echo "    --in <import_file|stdin>                   (Required) Input encrypted import_file"
+    echo "    --pass <import_file|string>                (Required) Passphrase to decrypt input import_file"
+    echo "    --key <import_file>                        (Optional) Private key import_file for decryption"
+    echo "    --out <import_file>                        (Optional) Output decrypted import_file. Default: stdout"
+    echo ""
+    echo "  ssl create-crl                      Create Certificate Revocation List"
+    echo "    --ca-key <import_file>                     (Optional) CA private key import_file. Default: defaultCA"
+    echo "    --ca-cert <import_file>                    (Optional) CA certificate import_file. Default: defaultCA"
+    echo "    --out <import_file>                        (Optional) Output CRL import_file. Default: $DC_CRL/<import_file>.crl"
+    echo "    --ca-pass <import_file|string>             (Optional) CA private key password"
+    echo "    --days <number>                     (Optional) CRL validity in days. Default: "
+    echo ""
+    echo "  ssl revoke-cert                     Revoke a certificate"
+    echo "    --cert <import_file>                       (Required) Certificate import_file to revoke"
+    echo "    --ca-key <import_file>                     (Required) CA private key import_file"
+    echo "    --ca-cert <import_file>                    (Required) CA certificate import_file"
+    echo "    --ca-pass <import_file|string>             (Optional) CA private key password"
+    echo "    --reason <reason>                   (Optional) Revocation reason"
+    echo ""
+    echo "  ssl show-index                      Show SSL index information"
+    echo "    --keys                              (Optional) Show key entries"
+    echo "    --ca                                (Optional) Show CA entries"
+    echo "    --verbose                           (Optional) Show detailed information"
+    echo "    --json                              (Optional) Output raw JSON index"
+    echo ""
+    echo "  ssl create-config                   Create SSL configuration import_file for OpenSSL operations"
+    echo "    --type <rootca|intca|client|server> (Required) Certificate type to generate config for"
+    echo "    --domains-ips <string>              (Optional) Comma-separated domains/IPs (for server certs)"
+    echo "    --email <string>                    (Optional) Email address for certificate"
+    echo "    --country <string>                  (Optional) Country code (e.g., US, DE)"
+    echo "    --state <string>                    (Optional) State or province"
+    echo "    --locality <string>                 (Optional) City or locality"
+    echo "    --organization <string>             (Optional) Organization name"
+    echo "    --orgunit <string>                  (Optional) Organizational unit"
+    echo "    --common-name <string>              (Optional) Common Name (CN) for the certificate"
+    echo "    --crldistributionpoint <string>     (Optional) CRL distribution point URL"
+    echo ""
+    echo "GPG COMMANDS:"
+    echo "============="
+    echo ""
+    echo "  gpg import                          Import GPG key to keyring"
+    echo "    --key <import_file>                        (Required) Key import_file to import"
+    echo "    --armor                             (Optional) Import ASCII armored key"
+    echo ""
+    echo "  gpg export                          Export GPG key from keyring"
+    echo "    --public <keyid>                    (Required) Export public key (or --private)"
+    echo "    --private <keyid>                   (Required) Export private key (or --public)"
+    echo "    --out <import_file>                        (Required) Output import_file"
+    echo "    --armor                             (Optional) Export in ASCII armor format"
+    echo ""
+    echo "  gpg encrypt                         Encrypt data with GPG"
+    echo "    --recipient <keyid>                 (Required) Recipient key ID or email"
+    echo "    --in <import_file>                         (Required) Input import_file to encrypt"
+    echo "    --out <import_file>                        (Required) Output encrypted import_file"
+    echo "    --armor                             (Optional) ASCII armor output"
+    echo ""
+    echo "  gpg decrypt                         Decrypt GPG encrypted data"
+    echo "    --in <import_file>                         (Required) Input encrypted import_file"
+    echo "    --out <import_file>                        (Required) Output decrypted import_file"
+    echo "    --pass <import_file|string>                (Optional) Private key passphrase"
+    echo ""
+    echo "  gpg genpair                         Generate GPG key pair"
+    echo "    --name <name>                       (Required) Real name for key"
+    echo "    --email <email>                     (Required) Email address for key"
+    echo "    --comment <comment>                 (Optional) Comment for key"
+    echo "    --keysize <bits>                    (Optional) Key size in bits (default: 4096)"
+    echo "    --expire <date>                     (Optional) Expiration date (0 = never)"
+    echo ""
+    echo "MAINTENANCE COMMANDS:"
+    echo "===================="
+    echo ""
+    echo "  show-index                      Show SSL index information"
+    echo "    --keys                              (Optional) Show key entries"
+    echo "    --ca                                (Optional) Show CA entries"
+    echo "    --verbose                           (Optional) Show detailed information"
+    echo "    --json                              (Optional) Output raw JSON index"
+    echo ""
+    echo "  cleanup                             Clean up DCrypto files and index"
+    echo "    --index <index>                     (Optional) Clean up specific index entry"
+    echo "    --orphaned                          (Optional) Remove orphaned files not in index"
+    echo "    --backups                           (Optional) Remove backup files"
+    echo "    --dry-run                           (Optional) Show what would be cleaned without doing it"
+    echo ""
+    echo "  backup                              Create backup of DCrypto directory"
+    echo "    --out <import_file>                        (Optional) Backup output import_file (default: /tmp/dcrypto-backup-YYYYMMDD_HHMMSS.tar)"
+    echo "    --compress                          (Optional) Compress backup with gzip"
+    echo "    --exclude-keys                      (Optional) Exclude private keys from backup"
+    echo ""
+    echo "  restore                             Restore DCrypto directory from backup"
+    echo "    --from <import_file>                       (Required) Backup import_file to restore from"
+    echo "    --force                             (Optional) Force restore without confirmation"
+    echo ""
+    echo "  set-default-ca                      Set default Certificate Authority"
+    echo "    --index <index>                     (Required) CA index to set as default"
+    echo "    --type <root|intermediate>          (Optional) CA type (default: root)"
+    echo ""
+    echo "  install                             Creates keys and certs and Integrates them in corresponding environment"
+    echo "    --docker-client-cert                 "
+    echo "    --docker-server-cert                 "
+    echo ""
+    echo ""
+    echo "OTHER COMMANDS:"
+    echo "==============="
+    echo "  --verbose -v                        Show verbose status informations"
+    echo "  --debug                             Show debug status informations"
+    echo "  version                             Show version information"
+    echo "  help                                Show this help message"
+    echo ""
+    echo "EXAMPLES:"
+    echo "========="
+    echo ""
+    echo "  # Create a root CA with encrypted private key"
+    echo "  $0 ssl create-ca --name \"My Root CA\" --password mypassword"
+    echo ""
+    echo "  # Create a server certificate CSR"
+    echo "  $0 ssl create-csr --domains \"example.com,192.168.1.100\" --type server --key my.key --cn example.com"
+    echo ""
+    echo "  # List all Certificate Authorities"
+    echo "  $0 ssl list-ca --verbose"
+    echo ""
+    echo "  # Create encrypted backup"
+    echo "  $0 backup --compress --out /secure/dcrypto-backup.tar.gz"
+    echo ""
+    echo "FILES:"
+    echo "======"
+    echo "  Configuration directory: $DC_DIR"
+    echo "  CA certificates:         $DC_CA/"
+    echo "  Private keys:            $DC_KEY/"
+    echo "  CRL files:               $DC_CRL/"
+    echo "  SSL/GnuPG database import_file: $DC_DB"
+    echo ""
+    echo "NOTES:"
+    echo "======"
+    echo "  • This script requires root privileges"
+    echo "  • Private keys use secp384r1 elliptic curve (384-bit)"
+    echo "  • Certificates use SHA-384 for signatures"
+    echo "  • Password-protected keys use Argon2id key derivation"
+    echo "  • All operations are logged in the JSON index for tracking"
+    echo "  • Use 'ssl/gpg show-index --json' to see the complete configuration"
+}
+
+main() {
+    # Check verbose
+    new_args=""
+
+    # Preprocess arguments to check for --verbose, -v, or --debug
+    while [ $# -gt 0 ]; do
+        # shellcheck disable=SC2034
+        case "$1" in
+            --verbose|-v) VERBOSE=1; shift;;
+            --debug) DEBUG=1; VERBOSE=1; shift;;
+            --user|-u) DC_USER="$2"; shift 2;;
+            *)
+                # Append argument to new_args string, preserving spaces
+                if [ -z "$new_args" ]; then
+                    new_args="$1"
+                else
+                    new_args="$new_args $1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Restore the modified argument list
+    # Using eval to handle spaces and special characters correctly
+    eval set -- "$new_args"
+
+    case "$1" in
+        ssl)
+            shift
+            case "$1" in
+                import)
+                    shift
+                    import=""
+                    scan_depth=1
+                    copy_files="false"
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --import-file) import="$2"; shift 2;;
+                            --import-dir) import="$2"; shift 2;;
+                            --scan-depth) scan_depth="$2"; shift 2;;
+                            --copy) copy_files=true; shift;;
+                        esac
+                    done
+                    import_ssl "$import" "$scan_depth" "$copy_files"
+                    ;;
+                kdf)
+                    shift
+                    password=""
+                    salt=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --pass) password="$2"; shift 2;;
+                            --salt) salt="$2"; shift 2;;
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echoe "Unknown command: $1"; _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    _create_argon2id_derived_key_pw "$password" "$salt"
+                ;;
+                create-ca)
+                    shift
+                    ca_cert_file=""
+                    ca_key_file=""
+                    ca_name=""
+                    intermediate="false"
+                    password=""
+                    email=""
+                    country=""
+                    state=""
+                    locality=""
+                    organization=""
+                    orgunit=""
+                    days=3650
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --outcert) ca_cert_file="$2"; shift 2;;
+                            --outkey) ca_key_file="$2"; shift 2;;
+                            --name|-CN|--CN) ca_name="$2"; shift 2;;
+                            --intermediate) intermediate="true"; shift;;
+                            --password|--pass) password="$2"; shift 2;;
+                            --email|-E) email="$2"; shift 2;;
+                            --country|-C) country="$2"; shift 2;;
+                            --state|-ST|--ST) state="$2"; shift 2;;
+                            --locality|-L) locality="$2"; shift 2;;
+                            --org|-O) organization="$2"; shift 2;;
+                            --orgunit|-OU) orgunit="$2"; shift 2;;
+                            --days) days="$2"; shift 2;;
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echoe "Unknown command: $1"; _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    create_certificate_authority "$ca_cert_file" "$ca_key_file" \
+                      "$ca_name" "$intermediate" \
+                      "$password" "$email" "$country" \
+                      "$state" "$locality" "$organization" \
+                      "$orgunit" "$days"
+                    ;;
+
+                create-key)
+                    shift
+                    out=""
+                    password=""
+                    salt=""
+                    no_argon="false"
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                          --out|--key) out="$2"; shift 2;;
+                          --password|--pass) password="$2"; shift 2;;
+                          --salt) salt="$2"; shift 2;;
+                          --noargon) no_argon=true; shift;;
+                          -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                          *) echoe "Unknown command: $1" && _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    create_private_key "$out" "$password" "$salt" "$no_argon"
+                    ;;
+
+                create-csr)
+                    shift
+                    key=""
+                    out=""
+                    domains=""
+                    common_name=""
+                    client="true"
+                    server="false"
+                    pass=""
+                    mail=""
+                    crldist=""
+                    country=""
+                    state=""
+                    locality=""
+                    organization=""
+                    orgunit=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --key|-k|-pk|--privatekey) key="$2"; shift 2;;
+                            --out|-o|--csrout) out="$2"; shift 2;;
+                            --domains|-d|--name|--commonname) domains="$2"; shift 2;;
+                            --cn|-cn|--CN|-CN) common_name="$2"; shift 2;;
+                            --client) client="true"; shift;;
+                            --server) server="true"; shift;;
+                            --pass|-p|--pwfile|--pfile) pass="$2"; shift 2;;
+                            --mail|-m|-E|-e) mail="$2"; shift 2;;
+                            --crldist) crldist="$2"; shift 2;;
+                            --country|-C) country="$2"; shift 2;;
+                            --state|-S) state="$2"; shift 2;;
+                            --locality|-L) locality="$2"; shift 2;;
+                            --org|-O) organization="$2"; shift 2;;
+                            --orgunit|-OU|--OU) orgunit="$2"; shift 2;;
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echoe "Unknown command: $1"; _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    create_certificate_signing_request "$key" "$out" \
+                      "$domains" "$client" "$server" "$mail" \
+                      "$pass" "$country" "$state" "$locality" \
+                      "$organization" "$orgunit" "$common_name" "$crldist"
+                    ;;
+
+                sign-csr)
+                    shift
+                    csr_file=""
+                    ca_cert=""
+                    ca_key=""
+                    out_cert=""
+                    ca_pass=""
+                    cert_days=""
+                    keep_csr="false"
+                    keep_cfg="false"
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --csr) csr_file="$2"; shift 2;;
+                            --ca-cert) ca_cert="$2"; shift 2;;
+                            --ca-key) ca_key="$2"; shift 2;;
+                            --out) out_cert="$2"; shift 2;;
+                            --ca-pass|--pass) ca_pass="$2"; shift 2;;
+                            --days) cert_days="$2"; shift 2;;
+                            --keep-csr) keep_csr="true"; shift;;
+                            --keep-cfg) keep_cfg="true"; shift;;
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echoe "Unknown command: $1"; _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    sign_certificate_request "$csr_file" "$ca_cert" \
+                        "$ca_key" "$out_cert" \
+                        "$ca_pass" "$cert_days" \
+                        "$keep_csr" "$keep_cfg"
+                    ;;
+
+                verify-cert)
+                    shift
+                    cert_file=""
+                    ca_cert=""
+                    cert_chain=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --cert) cert_file="$2"; shift 2;;
+                            --ca) ca_cert="$2"; shift 2;;
+                            --chain) cert_chain="$2"; shift 2;;
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echoe "Unknown command: $1"; _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    verify_certificate "$cert_file" "$ca_cert" "$cert_chain"
+                    ;;
+
+                list-ca)
+                    shift
+                    ca_list_type=""
+                    verbose="false"
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --type)
+                                if [ -n "$2" ] && ! expr "$2" : '^-' > /dev/null; then
+                                    ca_list_type="$2"
+                                    shift 2
+                                else
+                                    echoe "--type requires a value (all, root, or intermediate)"
+                                    exit 1
+                                fi
+                                ;;
+
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echoe "Unknown option for list-ca: $1"; exit 1;;
+                        esac
+                    done
+                    list_certificate_authorities "$ca_list_type" "$verbose"
+                    ;;
+
+                show-ca)
+                    shift
+                    ca_show_index=""
+                    ca_show_type=""
+                    show_cert_details=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --index) ca_show_index="$2"; shift 2;;
+                            --type) ca_show_type="$2"; shift 2;;
+                            --cert) show_cert_details="true"; shift;;
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echoe "Unknown option: $1"; _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    show_certificate_authority "$ca_show_index" "$ca_show_type" "$show_cert_details"
+                    ;;
+
+                encrypt)
+                    shift
+                    cert_file=""
+                    input=""
+                    output_file=""
+                    pass=""
+                    symmetric=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --cert) cert_file="$2"; shift 2;;
+                            --in) input="$2"; shift 2;;
+                            --out) output_file="$2"; shift 2;;
+                            --pass) pass="$2"; shift 2;;
+                            --symmetric) symmetric="$2"; shift 2;;
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echoe "Unknown option for encrypt: $1";  _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    ssl_encrypt "$cert_file" "$input" "$output_file"
+                    ;;
+
+                decrypt)
+                    shift
+                    key_file=""
+                    input=""
+                    output_file=""
+                    password=""
+                    symmetric=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --key) key_file="$2"; shift 2 ;;
+                            --in) input="$2"; shift 2 ;;
+                            --out) output_file="$2"; shift 2 ;;
+                            --pass) password="$2"; shift 2 ;;
+                            --symmetric) symmetric="$2"; shift 2;;
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echoe "Unknown option for decrypt: $1"; _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    ssl_decrypt "$key_file" "$input" "$output_file" "$password" "$symmetric"
+                    ;;
+
+                create-crl)
+                    shift
+                    ca_key_file=""
+                    ca_cert_file=""
+                    crl_outfile=""
+                    ca_pass=""
+                    crl_days=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --ca-key) ca_key_file="$2"; shift 2;;
+                            --ca-cert) ca_cert_file="$2"; shift 2;;
+                            --out) crl_outfile="$2"; shift 2;;
+                            --ca-pass|--pass) ca_pass="$2"; shift 2;;
+                            --days) crl_days="$2"; shift 2;;
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echoe "Unknown option: $1"; _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    if create_certificate_revocation_list "$ca_key_file" "$ca_cert_file" "$crl_outfile" "$ca_pass" "$crl_days"; then
+                        echos "Certificate Revocation List created successfully"
+                    else
+                        echoe "Failed to create CRL"
+                        exit 1
+                    fi
+                    ;;
+
+                revoke-cert)
+                    shift
+                    cert_file=""
+                    ca_key_file=""
+                    ca_cert_file=""
+                    ca_pass=""
+                    reason=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --cert) cert_file="$2"; shift 2;;
+                            --ca-key) ca_key_file="$2"; shift 2;;
+                            --ca-cert) ca_cert_file="$2"; shift 2;;
+                            --ca-pass|--pass) ca_pass="$2"; shift 2;;
+                            --reason) reason="$2"; shift 2;;
+                            -h|--help|help) _shorthelp "ssl $0"; exit 0;;
+                            *) echo "Unknown option: $1"; _shorthelp "ssl $0"; exit 1;;
+                        esac
+                    done
+                    revoke_certificate "$cert_file" "$ca_key_file" "$ca_cert_file" "$ca_pass" "$reason"
+                    ;;
+                create-config)
+                    shift
+                    type=""
+                    domains_ips=""
+                    email=""
+                    country=""
+                    state=""
+                    locality=""
+                    org=""
+                    orgunit=""
+                    common_name=""
+                    crldist=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --type|-t) type="$2"; shift 2;;
+                            --domains-ips|--domains|--ips|--domainsips|-d) domains_ips="$2"; shift 2;;
+                            --email|-E) email="$2"; shift 2;;
+                            --country|-C) country="$2"; shift 2;;
+                            --state|--ST|-ST) state="$2"; shift 2;;
+                            --locality|-L) locality="$2"; shift 2;;
+                            --organization|-O) org="$2"; shift 2;;
+                            --orgaunit|-OU|--OU) orgunit="$2"; shift 2;;
+                            --common-name|-CN|--CN) common_name="$2"; shift 2;;
+                            --crldistributionpoint) crldist="$2"; shift 2;;
+                            -h|--help|help|*)
+                              echo "Unknown option: $1"
+                              help | grep -A11 -B 1 --color=never -E "^  ssl create-config"
+                              exit 1
+                              ;;
+                        esac
+                    done
+                    if _create_sslconfig "$type" "$domains_ips" "$email" "$country" "$state" "$locality" \
+                      "$org" "$orgunit" "$common_name" "$crldist";  then
+                        printf "%s\n" "$DC_SSLCFG"
+                    else
+                        echo "Failed to create configuration"
+                        help | grep -A11 -B 1 --color=never -E "^  ssl create-config"
+                        exit 1
+                    fi
+                    ;;
+
+                # Maintenance and utility commands
+                show-index)
+                    shift
+                    show_keys="false"
+                    show_ca="false"
+                    json_output="false"
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --keys) show_keys="true"; shift;;
+                            --ca) show_ca="true"; shift;;
+                            --json) json_output="true"; shift;;
+                        esac
+                    done
+                    show_ssl_index "$show_keys" "$show_ca" "$json_output"
+                    ;;
+                install)
+                    shift
+                    client="false"
+                    server="false"
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --docker-client-cert) client=true; shift;;
+                            --docker-server-cert) server=true; shift;;
+                        esac
+                    done
+                    install_docker_cert "$client" "$server"
+                    ;;
+                -h|--help|help) help; exit 0;;
+                *) echoe "Unknown SSL command: $1"; help; exit 1;;
+            esac
+            ;;
+
+        gpg)
+            shift
+            case "$1" in
+                import)
+                    shift
+                    gpg_key_file=""
+                    gpg_armor="false"
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --key) gpg_key_file="$2"; shift 2;;
+                            --armor|-a) gpg_armor="true"; shift;;
+                            -h|--help|help) _shorthelp "gpg $0"; exit 0;;
+                            *) echoe "Unknown option: $1"; _shorthelp "gpg $0"; exit 1;;
+                        esac
+                    done
+                    gpg_import_key "$gpg_key_file" "$gpg_armor"
+                    ;;
+
+                export)
+                    shift
+                    gpg_export_public=""
+                    gpg_export_private=""
+                    gpg_export_out=""
+                    gpg_export_armor="false"
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --public) gpg_export_public="$2"; shift 2;;
+                            --private) gpg_export_private="$2"; shift 2;;
+                            --out) gpg_export_out="$2"; shift 2;;
+                            --armor|-a) gpg_export_armor="true"; shift;;
+                            -h|--help|help) _shorthelp "gpg $0"; exit 0;;
+                            *) echoe "Unknown option: $1"; _shorthelp "gpg $0"; exit 1;;
+                        esac
+                    done
+                    gpg_export_key "$gpg_export_public" "$gpg_export_private" "$gpg_export_out" "$gpg_export_armor"
+                    ;;
+
+                encrypt)
+                    shift
+                    gpg_recipient=""
+                    gpg_encrypt_input=""
+                    gpg_encrypt_output=""
+                    gpg_encrypt_armor="false"
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --recipient|-r) gpg_recipient="$2"; shift 2;;
+                            --in) gpg_encrypt_input="$2"; shift 2;;
+                            --out) gpg_encrypt_output="$2"; shift 2;;
+                            --armor|-a) gpg_encrypt_armor="true"; shift;;
+                            -h|--help|help) _shorthelp "gpg $0"; exit 0;;
+                            *) echoe "Unknown option: $1"; _shorthelp "gpg $0"; exit 1;;
+                        esac
+                    done
+                    gpg_encrypt "$gpg_recipient" "$gpg_encrypt_input" "$gpg_encrypt_output" "$gpg_encrypt_armor"
+                    ;;
+
+                decrypt)
+                    shift
+                    gpg_decrypt_input=""
+                    gpg_decrypt_output=""
+                    gpg_decrypt_pass=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --in) gpg_decrypt_input="$2"; shift 2;;
+                            --out) gpg_decrypt_output="$2"; shift 2;;
+                            --pass) gpg_decrypt_pass="$2"; shift 2;;
+                            -h|--help|help) _shorthelp "gpg $0"; exit 0;;
+                            *) echoe "Unknown option: $1"; _shorthelp "gpg $0"; exit 1;;
+                        esac
+                    done
+                    gpg_decrypt "$gpg_decrypt_input" "$gpg_decrypt_output" "$gpg_decrypt_pass"
+                    ;;
+
+                genpair)
+                    shift
+                    gpg_gen_name=""
+                    gpg_gen_email=""
+                    gpg_gen_comment=""
+                    gpg_gen_keysize=""
+                    gpg_gen_expire=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --name) gpg_gen_name="$2"; shift 2;;
+                            --email) gpg_gen_email="$2"; shift 2;;
+                            --comment) gpg_gen_comment="$2"; shift 2;;
+                            --keysize) gpg_gen_keysize="$2"; shift 2;;
+                            --expire) gpg_gen_expire="$2"; shift 2;;
+                            -h|--help|help) _shorthelp "gpg $0"; exit 0;;
+                            *) echoe "Unknown option: $1"; _shorthelp "gpg $0"; exit 1;;
+                        esac
+                    done
+                    gpg_generate_keypair "$gpg_gen_name" "$gpg_gen_email" "$gpg_gen_comment" "$gpg_gen_keysize" "$gpg_gen_expire"
+                    ;;
+
+                -h|--help|help|*) echoe "Unknown GPG command: $1"; help; exit 1;;
+            esac
+            ;;
+
+        --cleanup|cleanup)
+            shift
+            cleanup_index=""
+            cleanup_non_ca_keys="false"
+            cleanup_orphaned="false"
+            cleanup_backups="false"
+            cleanup_dry_run="false"
+            cleanup_keep_backups="false"
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --index) cleanup_index="$2"; shift 2;;
+                    --nonca) cleanup_non_ca_keys="true"; shift;;
+                    --orphaned) cleanup_orphaned="true"; shift;;
+                    --backups) cleanup_backups="true"; shift;;
+                    --dry*run) cleanup_dry_run="true"; shift;;
+                    --keep*bkps) cleanup_keep_backups="true"; shift;;
+                    -h|--help|help) _shorthelp "--cleanup"; exit 0;;
+                    *) echoe "Unknown option: $1"; _shorthelp "--cleanup";exit 1;;
+                esac
+            done
+            cleanup_dcrypto_files "$cleanup_index" "$cleanup_orphaned" \
+                "$cleanup_backups" "$cleanup_non_ca_keys" \
+                "$cleanup_dry_run" "$cleanup_keep_backups"
+            ;;
+
+        --backup|backup)
+            shift
+            backup_output=""
+            backup_compress="false"
+            backup_exclude_keys="false"
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --out) backup_output="$2"; shift 2;;
+                    --compress|-z) backup_compress="true"; shift;;
+                    --exclude-keys) backup_exclude_keys="true"; shift;;
+                    -h|--help|help|*) echoe "Unknown option: $1"; help; exit 1;;
+                esac
+            done
+            backup_dcrypto "$backup_output" "$backup_compress" "$backup_exclude_keys"
+            ;;
+
+        --restore|restore)
+            shift
+            restore_from=""
+            restore_force="false"
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --from) restore_from="$2"; shift 2;;
+                    --force) restore_force="true"; shift;;
+                    -h|--help|help|*) echoe "Unknown option: $1"; help; exit 1;;
+                esac
+            done
+            restore_dcrypto "$restore_from" "$restore_force"
+            ;;
+
+        --set-default-ca|set-default-ca)
+            shift
+            default_ca_index=""
+            default_ca_type=""
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --index) default_ca_index="$2"; shift 2;;
+                    --type) default_ca_type="$2"; shift 2;;
+                    -h|--help|help|*) echoe "Unknown option: $1"; help; exit 1;;
+                esac
+            done
+            set_default_ca "$default_ca_index" "$default_ca_type"
+            ;;
+
+        --reset-dcrypto)
+            shift
+            reset_ssl="false"
+            reset_gpg="false"
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --ssl) reset_ssl="true"; shift;;
+                    --gpg) reset_gpg="true"; shift;;
+                    -h|--help|help|*) echoe "Unknown option: $1"; help; exit 1;;
+                esac
+            done
+            _reset_dcrypto "$reset_ssl" "$reset_gpg"
+            exit 0
+            ;;
+
+        --version|version)
+            echos "dcrypto v0.1"
+            echos "A POSIX shell script for managing SSL certificates and GPG keys"
+            ;;
+
+        -h|--help|help)
+            help
+            exit 0
+            ;;
+        *)
+            if [ -z "$1" ]; then
+                help;
+                exit 0
+            else
+                echoe "Unknown command: $1"
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+main "$@"
