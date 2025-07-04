@@ -6,6 +6,26 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+
+DB_LIB_FILE="/usr/local/lib/dcrypto/db.sh"
+SSL_LIB_FILE="/usr/local/lib/dcrypto/ssl.sh"
+HELPER_LIB_FILE="/usr/local/lib/dcrypto/helper.sh"
+
+[ -f "$DB_LIB_FILE" ] || DB_LIB_FILE="$SCRIPT_DIR/../lib/db.sh"
+[ -f "$SSL_LIB_FILE" ] || SSL_LIB_FILE="$SCRIPT_DIR/../lib/ssl.sh"
+[ -f "$HELPER_LIB_FILE" ] || HELPER_LIB_FILE="$SCRIPT_DIR/../lib/helper.sh"
+
+# Source library files
+# shellcheck source=../lib/db.sh
+[ -f "$DB_LIB_FILE" ] && . "$DB_LIB_FILE"
+# shellcheck source=../lib/ssl.sh
+[ -f "$SSL_LIB_FILE" ] && . "$SSL_LIB_FILE"
+# shellcheck source=../lib/helper.sh
+[ -f "$HELPER_LIB_FILE" ] && . "$HELPER_LIB_FILE"
+
+
 DC_SSLCFG=""
 VERBOSE=0
 DEBUG=0
@@ -23,14 +43,12 @@ DC_CAKEY="$DC_CA/private"
 DC_GPGHOME="$DC_DIR/gpg_keyring"
 
 
-# Source library files
-. ./lib/db.sh
-. ./lib/helper.sh
-. ./lib/ssl.sh
-
 if [ ! -d $DC_DIR ]; then
     _setup_dcrypto_directory
 fi
+
+# TODO: GPG functions still missing
+# TODO: Help function is still missing few commands
 
 help() {
     echo "Usage: $0 <command> [subcommand] [options]"
