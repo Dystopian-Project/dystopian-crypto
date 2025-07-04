@@ -445,10 +445,12 @@ cleanup_dcrypto_files() {
                             }
                             # Remove from index.json
                             bkp_key=$(jq -r --arg idx "$index" --arg path "$old_backup" '.ssl.keys[$idx] | to_entries[] | select(.value == $path) | .key' "$DC_DB")
-                            jq -r "del(.ssl.keys.\"$index\".\"$bkp_key\")" "$DC_DB" > "$DC_DB.tmp" && mv "$DC_DB.tmp" "$DC_DB" 2>/dev/null || {
+                            if jq -e "del(.ssl.keys.\"$index\".\"$bkp_key\")" "$DC_DB" > "$DC_DB.tmp"; then
+                                mv "$DC_DB.tmp" "$DC_DB" 2>/dev/null
+                            else
                                 echoe "Failed to update index.json for backup import_file: $old_backup"
                                 continue
-                            }
+                            fi
                             echos "Removed backup import_file: $old_backup"
                         else
                             echov "Dry run: Would remove backup import_file: $old_backup"
@@ -502,10 +504,12 @@ cleanup_dcrypto_files() {
                     continue
                 }
                 # Remove the entire index entry
-                jq -r "del(.ssl.keys.\"$index\")" "$DC_DB" > "$DC_DB.tmp" && mv "$DC_DB.tmp" "$DC_DB" 2>/dev/null || {
+                if jq -e "del(.ssl.keys.\"$index\")" "$DC_DB" > "$DC_DB.tmp"; then
+                    mv "$DC_DB.tmp" "$DC_DB" 2>/dev/null
+                else
                     echoe "Failed to update index.json for non-CA key: $key_file"
                     continue
-                }
+                fi
                 echos "Removed non-CA key import_file: $key_file"
             else
                 echov "Dry run: Would remove non-CA key import_file: $key_file"
