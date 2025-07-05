@@ -1,0 +1,15 @@
+{
+  "ssl": {
+    "defaultCA": "",
+    "keys": {},
+    "ca": {
+      "root": {},
+      "intermediate": {}
+    }
+  },
+  "gpg": {
+    "defaultHome": "",
+    "defaultKey": "",
+    "keys": {}
+  }
+}

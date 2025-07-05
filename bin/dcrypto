@@ -40,12 +40,7 @@ DC_DB="$DC_DIR/db.json"
 # shellcheck disable=SC2034
 DC_CAKEY="$DC_CA/private"
 # shellcheck disable=SC2034
-DC_GPGHOME="$DC_DIR/gpg_keyring"
-
-
-if [ ! -d $DC_DIR ]; then
-    _setup_dcrypto_directory
-fi
+DC_GPGHOME="$DC_DIR/gpg"
 
 # TODO: GPG functions still missing
 # TODO: Help function is still missing few commands

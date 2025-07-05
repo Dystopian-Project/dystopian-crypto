@@ -1,30 +1,4 @@
-_setup_dcrypto_directory() {
-    echoi "Setting up dcrypto..."
-    mkdir -p "$DC_CAKEY" "$DC_KEY" "$DC_CRL" "$DC_GPGHOME"
-    chmod 750 -R "$DC_DIR"
-    chmod 700 "$DC_KEY" "$DC_CAKEY"
-    jq -n '{
-        ssl: {
-          defaultCA: "",
-          keys: {},
-          ca: {
-            root: {},
-            intermediate: {}
-        }
-        },
-          gpg: {
-            defaultHome: "",
-            defaultKey: "",
-            keys: {}
-          }
-        }' > "$DC_DB"
-    chmod 600 "$DC_DB" && chown root:"$DC_USER" "$DC_DB"
-    echos "...setup successful"
-    return 0
-}
-
-
-_askyesno() {
+askyesno() {
     default="$2"
     case "$default" in
         y|Y|yes|Yes|YES)
@@ -90,7 +64,7 @@ echosv() {
   fi
 }
 
-_is_ip() {
+is_ip() {
     ip="$1"
     if echo "$ip" | grep -E '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$' >/dev/null 2>&1; then
         return 0
@@ -101,17 +75,17 @@ _is_ip() {
 }
 
 
-_shorthelp() {
+shorthelp() {
   echo ""
   help | sed -n "/  $1/,/^$/p"
 }
 
 
-_reset_dcrypto() {
+reset_dcrypto() {
     ssl="${1:-false}"
     gpg="${2:-false}"
-    if _askyesno "Are you sure you want to reset the config and keys?" "n";then
-        if _askyesno "Do you want to backup the directory first?" "y"; then
+    if askyesno "Are you sure you want to reset the config and keys?" "n";then
+        if askyesno "Do you want to backup the directory first?" "y"; then
             cp -rf "$DC_DIR" "${DC_DIR}.bkp" 2>/dev/null || {
               echoe "Problem backing up keys and config"
               exit 1
@@ -148,7 +122,7 @@ _reset_dcrypto() {
 }
 
 # Parses domains & ips from comma separated string
-_process_domains() {
+process_domains() {
     domains_ips="$1"
     orig_args="$*"
     : "${dnsc:=1}"
@@ -158,7 +132,7 @@ _process_domains() {
     ips=""
     dns=""
     for domain in $domains_ips; do
-        if _is_ip "$domain"; then
+        if is_ip "$domain"; then
             ips="${ips}\nIP.$ipc = $domain"
             ipc=$(("$ipc" + 1))
         else
@@ -170,7 +144,7 @@ _process_domains() {
 }
 
 # Creates SSL configuration file
-_create_sslconfig() {
+create_sslconfig() {
     cfg_type="$1"
     domains_ips="$2"
     email="${3:-}"
@@ -182,7 +156,7 @@ _create_sslconfig() {
     common_name="${9:-}"
     crldistpoints="${10:-}"
 
-    _process_domains "$domains_ips"
+    process_domains "$domains_ips"
     if [ "$cfg_type" = "server" ]; then
         common_name="${domains_ips%% *}"
     elif [ "$cfg_type" = "client" ]; then
@@ -705,7 +679,7 @@ install_docker_cert() {
 }
 
 
-_key_belongs_to_cert() {
+key_belongs_to_cert() {
     key_file="$1"
     cert_file="$2"
     keypub=$(openssl ec -in "$key_file" -pubout 2>/dev/null || \
@@ -724,7 +698,7 @@ _key_belongs_to_cert() {
 }
 
 
-_get_file_type() {
+get_file_type() {
     file="$(realpath "$1")"
     filename="$(basename "$file")"
     ext=${filename##*.}
@@ -768,3 +742,9 @@ check_ssl_database() {
         fi
     done
 }
+
+date_now() {
+  date -F
+}
+
+
