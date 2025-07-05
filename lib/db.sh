@@ -1,4 +1,4 @@
-_get_ssl_keys_key_value() {
+get_ssl_keys_key_value() {
     index="$1"
     key="$2"
 
@@ -12,7 +12,7 @@ _get_ssl_keys_key_value() {
         "$DC_DB"
 }
 
-_reset_ssl_index() {
+reset_ssl_index() {
     # Reset SSL section to default state
     if jq '.ssl = {
         defaultCA: "",
@@ -32,7 +32,7 @@ _reset_ssl_index() {
     echosv "SSL index reset to default state"
 }
 
-_reset_gpg_index() {
+reset_gpg_index() {
     # Reset GPG section to default state
     if jq '.gpg = {
         defaultHome: "",
@@ -49,14 +49,14 @@ _reset_gpg_index() {
     echosv "GPG index reset to default state"
 }
 
-_get_storage() {
+get_storage() {
     cat="$1"
     key="$2"
     jq --arg cat "$cat" --arg key "$key" -r '.[$cat][$key]' "${DC_DB}"
 }
 
 
-_delete_storage() {
+delete_storage() {
   if [ "$1" = "default" ]; then
     echoe "The default CA storage can't be deleted"
     exit 1
@@ -68,7 +68,7 @@ _delete_storage() {
   echosv "Deleted CA storage ${1}"
 }
 
-_add_to_ssl_keys_database() {
+add_to_ssl_keys_database() {
     index="$1"
     key="$2"
     value="$3"
@@ -99,7 +99,7 @@ _add_to_ssl_keys_database() {
 }
 
 
-_cleanup_after_signing() {
+cleanup_after_signing() {
     index="$1"
     dictkey="$2"
     path="$3"
@@ -117,7 +117,7 @@ _cleanup_after_signing() {
     fi
 }
 
-_cleanup_index() {
+cleanup_index() {
     index="$1"
         jq --arg idx "$index" \
         'del(.ssl.keys[$idx])' \
@@ -127,7 +127,7 @@ _cleanup_index() {
         echos "Cleaned up Index $index"
 }
 
-_find_index_by_key_value() {
+find_index_by_key_value() {
     search_key="$1"
     search_value="$2"
 
@@ -136,7 +136,7 @@ _find_index_by_key_value() {
         "$DC_DB"
 }
 
-_backup_and_rename() {
+backup_and_rename() {
     file_type="$1"  # "csr" or "cfg"
     index="$2"
     outfile="$3"
@@ -215,7 +215,7 @@ _backup_and_rename() {
 }
 
 # CA-specific index functions
-_get_ca_value() {
+get_ca_value() {
     ca_type="$1"  # "root" or "intermediate"
     ca_index="$2"
     key="$3"
@@ -230,7 +230,7 @@ _get_ca_value() {
 }
 
 
-_add_to_ca_database() {
+add_to_ca_database() {
     ca_type="$1"
     ca_index="$2"
     key="$3"
@@ -261,7 +261,7 @@ _add_to_ca_database() {
     fi
 }
 
-_find_ca_by_key_value() {
+find_ca_by_key_value() {
     ca_type="$1"  # "root" or "intermediate"
     search_key="$2"
     search_value="$3"
@@ -278,7 +278,7 @@ _find_ca_by_key_value() {
 
 
 
-_find_ca_by_key_value_any() {
+find_ca_by_key_value_any() {
     search_key="$1"
     search_value="$2"
 
@@ -288,12 +288,12 @@ _find_ca_by_key_value_any() {
     fi
 
     # Try root first, then intermediate
-    result=$(_find_ca_by_key_value "root" "$search_key" "$search_value")
+    result=$(find_ca_by_key_value "root" "$search_key" "$search_value")
     if [ -n "$result" ]; then
         return 0
     fi
 
-    result=$(_find_ca_by_key_value "intermediate" "$search_key" "$search_value")
+    result=$(find_ca_by_key_value "intermediate" "$search_key" "$search_value")
     if [ -n "$result" ]; then
         return 0
     fi
@@ -301,7 +301,7 @@ _find_ca_by_key_value_any() {
     return 1
 }
 
-_ca_with_name_exists() {
+ca_with_name_exists() {
     name="$1"
       # Check if <name> exists in root or intermediate
     if jq -e ".ssl.ca.root.\"$name\" // .ssl.ca.intermediate.\"$name\" // null" "$DC_DB" >/dev/null; then
@@ -313,7 +313,7 @@ _ca_with_name_exists() {
     fi
 }
 
-_cleanup_ca_index() {
+cleanup_ca_index() {
     ca_type="$1"
     ca_index="$2"
 
