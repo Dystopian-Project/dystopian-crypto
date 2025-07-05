@@ -1,6 +1,8 @@
 PREFIX = /usr/local
 
-install:
+install: setup
+
+setup:
     install -d $(PREFIX)/bin
     install -m 700 bin/dcrypto $(PREFIX)/bin/dcrypto
     install -d -m 750 /etc/dcrypto
