@@ -24,7 +24,7 @@ _create_argon2id_derived_key_pw() {
     # Check the exit status of the pipeline
     if openssl kdf \
         -keylen 32 \
-        -kdfopt pass:"$password" \
+        -kdfopt password:"$password" \
         -kdfopt salt:"$salt" \
         -kdfopt memcost:"131072" \
         -kdfopt early_clean:1 \
@@ -38,12 +38,12 @@ _create_argon2id_derived_key_pw() {
 }
 
 
-
 create_private_key() {
-    out_file="${1:-"$DC_KEY/key.pem"}"
-    password="${2:-}"
+    out_file="$1"
+    password="$2"
+    salt_out="$3"
     import_dir="$(realpath "$out_file" | awk -F/ '{NF--; print}' OFS=/)"
-    no_argon="${4:-false}"
+    no_argon="$4"
     nodb=0
 
     echod "Starting create_private_key with parameters:"
@@ -127,12 +127,12 @@ create_private_key() {
                 echod "Salt generated and saved to $salt_out"
 
                 echov "Encrypting with Argon2id-derived key..."
-                # Use Argon2id-derived key with pass: prefix (the method that works)
+                # Use Argon2id-derived key with password: prefix (the method that works)
                 if ! _create_argon2id_derived_key_pw "$password" "$salt_value" | openssl genpkey \
                     -algorithm EC \
                     -pkeyopt ec_paramgen_curve:secp384r1 \
                     -aes-256-cbc \
-                    -pass stdin \
+                    -password stdin \
                     -out "$out_file" >/dev/null 2>&1; then
                     echoe "Failed to generate encrypted private key with Argon2id"
                     return 1
@@ -155,7 +155,7 @@ create_private_key() {
                     -algorithm EC \
                     -pkeyopt ec_paramgen_curve:secp384r1 \
                     -aes-256-cbc \
-                    -pass stdin \
+                    -password stdin \
                     -out "$out_file" >/dev/null 2>&1; then
                           echoe "Failed to generate encrypted private key with Argon2id"
                           return 1
@@ -229,16 +229,16 @@ create_certificate_signing_request() {
     key_file="$1"
     csr_outfile="$2"
     domains="$3"
-    client="${4:-}"
-    server="${5:-}"
-    email="${6:-}"
-    pass="${7:-}"
-    country="${8:-}"
-    state="${9:-}"
-    locality="${10:-}"
-    organization="${11:-}"
-    orgunit="${12:-}"
-    crldist="${13:-}"
+    client="$4"
+    server="$5"
+    email="$6"
+    password="$7"
+    country="$8"
+    state="$9"
+    locality="${10}"
+    organization="${11}"
+    orgunit="${12}"
+    crldist="${13}"
 
     echod "Starting create_certificate_signing_request with parameters:"
     echod "      key_file: $key_file"
@@ -247,7 +247,7 @@ create_certificate_signing_request() {
     echod "        client: $client"
     echod "        server: $server"
     echod "         email: $email"
-    echod "          pass: $pass"
+    echod "      password: $password"
     echod "       country: $country"
     echod "         state: $state"
     echod "      locality: $locality"
@@ -333,7 +333,7 @@ create_certificate_signing_request() {
     if [ -z "$DC_SSLCFG" ]; then
         echoi "Creating SSL configuration for $type certificate"
         _create_sslconfig "$type" "$domains" "$email" "$country" \
-          "$state" "$locality" "$organization" "$orgunit" "$common_name" "$crldist"
+          "$state" "$locality" "$organization" "$orgunit" "" "$crldist"
         echosv "SSL configuration generated successfully"
 
         # Create config import_file in output directory with same base name as key
@@ -396,7 +396,7 @@ create_certificate_signing_request() {
     echoi "Generating Certificate Signing Request"
     (
         # Handle encrypted private key if password is provided
-        if [ -n "$pass" ]; then
+        if [ -n "$password" ]; then
             echov "Password provided, handling encrypted private key"
             # Generate derived key from password and salt
             salt_file="$(_get_ssl_keys_key_value "$index" "salt")"
@@ -408,12 +408,12 @@ create_certificate_signing_request() {
             fi
 
             # Get password content
-            if [ -f "$pass" ]; then
-                echov "Reading password from import_file: $pass"
-                pass_content="$(cat "$pass")"
+            if [ -f "$password" ]; then
+                echov "Reading password from import_file: $password"
+                pass_content="$(cat "$password")"
             else
                 echov "Using provided password directly"
-                pass_content="$pass"
+                pass_content="$password"
             fi
             echod "Password content retrieved"
 
@@ -431,7 +431,7 @@ create_certificate_signing_request() {
                 echov "Using Argon2id derived key for CSR generation"
                 openssl req -new -key "$key_file" -out "$csr_outfile" \
                     -config "$config_file" \
-                    -passin "pass:$derived_key" \
+                    -passin "password:$derived_key" \
                     2>/dev/null || {
                     echoe "Failed to generate CSR (with Argon2 derived key)"
                     return 1
@@ -575,8 +575,8 @@ create_certificate_revocation_list() {
     ca_key_file="$1"
     ca_cert_file="$2"
     crl_outfile="$3"
-    ca_pass="${4:-}"
-    crl_days="${5:-30}"
+    ca_pass="$4"
+    crl_days="$5"
 
     # Check for default CA in index.json if CA files not provided
     default_ca=""
@@ -589,11 +589,6 @@ create_certificate_revocation_list() {
             ca_key_file="${ca_key_file:-$(_get_storage "ca" "$default_ca" | jq -r '.key // empty')}"
         fi
     fi
-
-    # Set defaults if not provided and no default CA found
-    ca_key_file="${ca_key_file:-"$DC_CA/ca-key.pem"}"
-    ca_cert_file="${ca_cert_file:-"$DC_CA/ca.pem"}"
-    crl_outfile="${crl_outfile:-"$DC_CRL/ca.crl"}"
 
     # Validate required files exist
     if [ ! -f "$ca_key_file" ]; then
@@ -797,8 +792,8 @@ revoke_certificate() {
     cert_file="$1"
     ca_key_file="$2"
     ca_cert_file="$3"
-    ca_pass="${4:-}"
-    reason="${5:-unspecified}"
+    ca_pass="$4"
+    reason="$5"
 
     # Check for default CA in index.json if CA files not provided
     default_ca=""
@@ -899,11 +894,16 @@ revoke_certificate() {
 }
 
 verify_certificate() {
-    cert_file="${1:-"cert.pem"}"
-    ca_cert="${2:-"ca.pem"}"
-    verbose="${3:-false}"
-    check_expiry="${4:-true}"
+    cert_file="$1"
+    ca_cert="$2"
+    cert_chain="$3"
+    check_expiry="$4"
+    verbose="$5"
 
+    # shellcheck disable=SC2153
+    if [ "$VERBOSE" -eq 1 ] || [ "$verbose" = "true" ]; then
+        verbose="true"
+    fi
     # Validate input files exist
     if [ ! -f "$cert_file" ]; then
         echoe "Certificate import_file '$cert_file' does not exist"
@@ -945,49 +945,49 @@ verify_certificate() {
     verification_result=$?
 
     if [ $verification_result -eq 0 ]; then
-        echo "✓ Certificate verification successful: $cert_file"
+        echosv "Certificate verification successful: $cert_file"
 
         if [ "$verbose" = "true" ]; then
-            echo ""
-            echo "Certificate Details:"
-            echo "  Subject: $cert_subject"
-            echo "  Issuer:  $cert_issuer"
-            echo "  CA Subject: $ca_subject"
-            echo ""
+            echov ""
+            echov "Certificate Details:"
+            echov "  Subject: $cert_subject"
+            echov "  Issuer:  $cert_issuer"
+            echov "  CA Subject: $ca_subject"
+            echov ""
 
             # Show validity dates
-            echo "Validity Period:"
+            echov "Validity Period:"
             openssl x509 -in "$cert_file" -noout -dates | sed 's/^/  /'
-            echo ""
+            echov ""
 
             # Show SAN if present
             san=$(openssl x509 -in "$cert_file" -noout -ext subjectAltName 2>/dev/null | grep -A1 "Subject Alternative Name" | tail -n1)
             if [ -n "$san" ]; then
-                echo "Subject Alternative Names:"
-                echo "  $san"
-                echo ""
+                echov "Subject Alternative Names:"
+                echov "  $san"
+                echov ""
             fi
 
             # Show key usage
             key_usage=$(openssl x509 -in "$cert_file" -noout -ext keyUsage 2>/dev/null | grep -A1 "Key Usage" | tail -n1)
             if [ -n "$key_usage" ]; then
-                echo "Key Usage:"
-                echo "  $key_usage"
-                echo ""
+                echov "Key Usage:"
+                echov "  $key_usage"
+                echov ""
             fi
 
             # Show extended key usage
             ext_key_usage=$(openssl x509 -in "$cert_file" -noout -ext extendedKeyUsage 2>/dev/null | grep -A1 "Extended Key Usage" | tail -n1)
             if [ -n "$ext_key_usage" ]; then
-                echo "Extended Key Usage:"
-                echo "  $ext_key_usage"
-                echo ""
+                echov "Extended Key Usage:"
+                echov "  $ext_key_usage"
+                echov ""
             fi
         fi
 
         return 0
     else
-        echow "✗ Certificate verification failed: $cert_file"
+        echow "Certificate verification failed: $cert_file"
         echow "Error details: $verification_output"
 
         # Try to provide more specific error information
@@ -1000,10 +1000,10 @@ verify_certificate() {
         fi
 
         if [ "$verbose" = "true" ]; then
-            echo ""
-            echow "Certificate Subject: $cert_subject"
-            echow "Certificate Issuer:  $cert_issuer"
-            echow "CA Subject:          $ca_subject"
+            echov ""
+            echowv "Certificate Subject: $cert_subject"
+            echowv "Certificate Issuer:  $cert_issuer"
+            echowv "CA Subject:          $ca_subject"
         fi
 
         return 1
@@ -1015,7 +1015,11 @@ verify_certificate_chain() {
     cert_file="$1"
     intermediate_ca="$2"
     root_ca="$3"
-    verbose="${4:-false}"
+    verbose="$4"
+
+    if [ "$VERBOSE" -eq 1 ] || [ "$verbose" = "true" ]; then
+        verbose="true"
+    fi
 
     if [ -z "$cert_file" ] || [ -z "$root_ca" ]; then
         echoe "Certificate and root CA are required"
@@ -1050,14 +1054,14 @@ verify_certificate_chain() {
 }
 
 sign_certificate_request() {
-    csr_file="${1:-"$DC_KEY/server.csr"}"
-    ca_cert_file="${2:-"$DC_CA/ca.pem"}"
-    ca_key_file="${3:-"$DC_CA/ca-key.pem"}"
-    cert_outfile="${4:-"$DC_CERT/cert.pem"}"
-    ca_pass="${5:-}"
-    validity_days="${6:-365}"
-    keep_csr="${7:-false}"
-    keep_cfg="${8:-false}"
+    csr_file="$1"
+    ca_cert_file="$2"
+    ca_key_file="$3"
+    cert_outfile="$4"
+    ca_pass="$5"
+    validity_days="$6"
+    keep_csr="$7"
+    keep_cfg="$8"
 
     echod "Starting sign_certificate_request with parameters:"
     echod "      csr_file: $csr_file"
@@ -1249,7 +1253,7 @@ sign_certificate_request() {
                         -sha384 \
                         -extensions req_ext \
                         -extfile "$config_file" \
-                        -passin "pass:$ca_pass_content" 2>/dev/null || {
+                        -passin "password:$ca_pass_content" 2>/dev/null || {
                         echoe "Failed to sign CSR with encrypted CA key"
                         return 1
                     }
@@ -1266,7 +1270,7 @@ sign_certificate_request() {
                     -sha384 \
                     -extensions req_ext \
                     -extfile "$config_file" \
-                    -passin "pass:$ca_pass_content" 2>/dev/null || {
+                    -passin "password:$ca_pass_content" 2>/dev/null || {
                     echoe "Failed to sign CSR with encrypted CA key"
                     return 1
                 }
@@ -1372,28 +1376,30 @@ sign_certificate_request() {
 }
 
 create_certificate_authority() {
-    ca_cert_file="${1:-}"
-    ca_key_file="${2:-}"
-    ca_name="${3:-}"
-    intermediate="${4:-false}"
-    password="${5:-}"
-    email="${6:-}"
-    country="${7:-}"
-    state="${8:-}"
-    locality="${9:-}"
-    organization="${10:-}"
-    orgunit="${11:-}"
-    days="${12:-3650}"
-    no_argon="${13:-false}"
-    salt_out="${14:-}"
+    ca_cert_file="$1"
+    ca_key_file="$2"
+    ca_name="$3"
+    intermediate="$4"
+    password="$5"
+    email="$6"
+    country="$7"
+    state="$8"
+    locality="$9"
+    organization="${10}"
+    orgunit="${11}"
+    days="${12}"
+    no_argon="${13}"
+    salt_out="${14}"
 
     echod "Starting create_certificate_authority with parameters:"
     echod "  ca_cert_file: $ca_cert_file"
-    echod "  ca_key_file: $ca_key_file"
-    echod "  ca_name: $ca_name"
+    echod "   ca_key_file: $ca_key_file"
+    echod "       ca_name: $ca_name"
     echod "  intermediate: $intermediate"
-    echod "  password: $([ -n "$password" ] && echo "[SET]" || echo "[EMPTY]")"
-    echod "  days: $days"
+    echod "      password: $([ -n "$password" ] && echo "[SET]" || echo "[EMPTY]")"
+    echod "      salt_out: $salt_out"
+    echod "      no_argon: $no_argon"
+    echod "          days: $days"
 
     # Set defaults based on CA type
     if [ "$intermediate" = "true" ]; then
@@ -1639,11 +1645,11 @@ create_certificate_authority() {
 
 # TODO: Finish SSL encrypt and decrypt functions
 ssl_encrypt() (
-    cert="${1:-}"
+    cert="$1"
     input="$2"
-    output="${3:-stdout}"
+    output="$3"
     password="$4"
-    symmetric="${5:-true}"
+    asymmetric="$5"
 
     if [ -f "$input" ]; then
         input="$(cat "$input")"
@@ -1653,10 +1659,10 @@ ssl_encrypt() (
 
     fi
 
-    if [ "$symmetric" = "true" ]; then
+    if [ "$asymmetric" = "false" ]; then
         # --- Symmetric Encryption ---
         if [ -z "$password" ]; then
-            echoe "--pass is required for symmetric encryption (--symmetric)."
+            echoe "--password is required for asymmetric encryption (--asymmetric)."
             return 1
         fi
 
@@ -1668,8 +1674,8 @@ ssl_encrypt() (
         fi
 
         # 2. Encrypt the data to a temporary import_file, piping the derived key directly.
-        echo "Info: Performing symmetric encryption."
-        if ! { _create_argon2id_derived_key_pw "$password" "$salt" | openssl aes-256-cbc -e -pbkdf2 -in "$input" -out "$output" -pass stdin; }; then
+        echo "Info: Performing asymmetric encryption."
+        if ! { _create_argon2id_derived_key_pw "$password" "$salt" | openssl aes-256-cbc -e -pbkdf2 -in "$input" -out "$output" -password stdin; }; then
             echoe "Symmetric encryption failed. This could be a KDF or an OpenSSL error."
             return 1
         fi
@@ -1680,7 +1686,7 @@ ssl_encrypt() (
     else
 
         if [ -n "$password" ]; then
-             echowv "Warning: --pass is ignored for asymmetric encryption."
+             echowv "Warning: --password is ignored for asymmetric encryption."
         fi
 
         if [ -z "$cert_file" ]; then
@@ -1709,21 +1715,21 @@ ssl_encrypt() (
 
 
 ssl_decrypt() (
-    key_file="${1:-}"
+    key_file="$1"
     input="$2"
-    output_file="$3"
-    password="${4:-}"
-    symmetric="${5:-}"
+    output="$3"
+    password="$4"
+    asymmetric="$5"
 
     if [ -z "$input" ] || [ -z "$output_file" ]; then
         echoe "--in and --out are required for decrypt"
         exit 1
     fi
 
-    if [ "$symmetric" = "true" ]; then
+    if [ "$asymmetric" = "false" ]; then
         # --- Symmetric Decryption ---
         if [ -z "$password" ]; then
-            echoe "--pass is required for symmetric decryption (--symmetric)."
+            echoe "--password is required for asymmetric decryption (--asymmetric)."
             return 1
         fi
 
@@ -1735,7 +1741,7 @@ ssl_decrypt() (
         fi
 
         # 2. Decrypt, piping the derived key from the KDF directly to OpenSSL.
-        if ! { _create_argon2id_derived_key_pw "$password" "$salt" | openssl enc -d -aes-256-cbc -pbkdf2 -in "" -out "$output_file" -pass stdin; }; then
+        if ! { _create_argon2id_derived_key_pw "$password" "$salt" | openssl enc -d -aes-256-cbc -pbkdf2 -in "" -out "$output_file" -password stdin; }; then
             echoe "Symmetric decryption failed. Check your password. This could also be a KDF or an OpenSSL error."
             return 1
         fi
@@ -1782,16 +1788,23 @@ ssl_decrypt() (
 
 import_ssl() {
     import="$1"
-    scan_depth="${2:-1}"
-    copy_files="${3:-false}"
+    scan_depth="$2"
+    copy_files="$3"
+    move_files="$4"
 
     echod "Starting import_ssl with parameters:"
     echod "           import: $import"
     echod "       scan_depth: $scan_depth"
     echod "       copy_files: $copy_files"
+    echod "       move_files: $move_files"
     echod "             user: $DC_USER"
 
     : "${filecount:=0}"
+
+    if [ "$copy_files" = "true" ] && [ "$move_files" = "true" ]; then
+        echoe "--copy-files and --move-files can't be set both as parameter"
+        return 1
+    fi
 
     if [ -f "$import" ]; then
         echod "Importing import_file at $import"
@@ -1822,7 +1835,7 @@ import_ssl() {
                 ca_index="$(echo "$ca_cn" | sed -e 's/\ /\_/' -e 's/\-/\_/' | tr "[:upper:]" "[:lower:]")"
             fi
 
-            if [ "$copy_files" = "true" ]; then
+            if [ "$copy_files" = "true" ] || [ "$move_files" = "true" ]; then
                 if [ "$ftype" = "key" ] && [ -n "$ca_type" ]; then
                     dirpath="$DC_CAKEY"
                 elif [ "$ftype" = "key" ] && [ -z "$ca_type" ]; then
@@ -1838,8 +1851,13 @@ import_ssl() {
                         dirpath="$DC_CERT"
                     fi
                 fi
+            fi
+            if [ "$copy_files" = "true" ]; then
                 cp -f "$filepath" "$dirpath/$filename"
                 echov "Copied file $filepath into dcrypto directory: $dirpath"
+            elif [ "$move_files" = "true" ]; then
+                mv "$filepath" "$dirpath/$filename"
+                echov "Moved file $filepath into dcrypto directory: $dirpath"
             fi
 
             if [ -n "$ftype" ] && [ -n "$ca_type" ] && [ -n "$ca_index" ]; then
