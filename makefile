@@ -1,5 +1,7 @@
 PREFIX = /usr/local
 
+.PHONY: install setup clean
+
 install:
     install -d $(PREFIX)/bin
     install -m 700 bin/dcrypto $(PREFIX)/bin/dcrypto
@@ -16,3 +18,9 @@ install:
     install -m 640 lib/ssl.sh $(PREFIX)/lib/dcrypto/ssl.sh
     install -d $(PREFIX)/share/doc/dcrypto
     install -m 644 README.md $(PREFIX)/share/doc/dcrypto/README.md
+
+clean:
+    rm -rf $(PREFIX)/bin/dcrypto
+    rm -rf /etc/dcrypto
+    rm -rf $(PREFIX)/lib/dcrypto
+    rm -rf $(PREFIX)/share/doc/dcrypto
