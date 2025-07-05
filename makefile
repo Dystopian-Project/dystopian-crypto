@@ -1,7 +1,5 @@
 PREFIX = /usr/local
 
-.PHONY: install setup clean
-
 install:
 	install -d $(PREFIX)/bin
 	install -m 700 bin/dcrypto $(PREFIX)/bin/dcrypto
