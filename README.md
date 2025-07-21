@@ -33,13 +33,13 @@
 - [x] CSR verification (encrypted CA key)
 
 #### ssl sign-csr|create-cert
-- [ ] sign with unencrypted CA key
-- [ ] sign with encrypted CA key (pbkdf2)
-- [ ] sign with encrypted CA key (argon2id)
-- [ ] cert signature verification (unencrypted)
-- [ ] cert signature verification (encrypted)
-- [ ] cert content verification (unencrypted)
-- [ ] cert content verification (encrypted)
+- [x] sign with unencrypted CA key
+- [x] sign with encrypted CA key (pbkdf2)
+- [x] sign with encrypted CA key (argon2id)
+- [x] cert signature verification (unencrypted)
+- [x] cert signature verification (encrypted)
+- [x] cert content verification (unencrypted)
+- [x] cert content verification (encrypted)
 
 #### ssl create-ca
 - [x] create rootCA self-signed (key not encrypted)
@@ -60,12 +60,12 @@
 
 ### ssl encrypt
 - [ ] asymmetric
-- [x] symmetric (pbkdf2)
+- [ ] symmetric (pbkdf2)
 - [ ] symmetric (argon2id)
 
 ### ssl decrypt
 - [ ] asymmetric
-- [x] symmetric (pbkdf2)
+- [ ] symmetric (pbkdf2)
 - [ ] symmetric (argon2id)
 
 ### gpg import
@@ -87,7 +87,6 @@
 ### reset-dcrypto
 - [x] ssl reset
 - [x] gpg reset
-
 
 ### misc
 - [x] debug mode
