@@ -1,3 +1,6 @@
+# shellcheck shell=sh
+# shellcheck disable=SC2001
+
 askyesno() {
     default="$2"
     case "$default" in
@@ -9,7 +12,7 @@ askyesno() {
             question=$(printf "%s [y/N]: " "$1")
             default_return=1
             ;;
-        -h|--help|help|*)
+        *)
             question=$(printf "%s [y/N]: " "$1")
             default_return=1
             ;;
@@ -27,21 +30,29 @@ askyesno() {
 }
 
 echoi() {
-    printf "\033[1m\033[1;36m>\033[0m\033[1;37m\033[1m %s\033[0m\n" "$1"
+    if [ "$QUIET" -ne 1 ]; then
+        if [ "$DEBUG" -eq 1 ]; then istr="   INFO:"; else istr=""; fi
+        printf "\033[1m\033[1;36m>%s\033[0m\033[1;37m\033[1m %s\033[0m\n" "$istr" "$1"
+    fi
 }
 
 echov() {
-  if [ "$VERBOSE" -eq 1 ]; then
-      echoi "$1"
-  fi
+    if [ "$VERBOSE" -eq 1 ]; then
+        if [ "$DEBUG" -eq 1 ]; then istr="   INFO:"; else istr=""; fi
+        printf "\033[1m\033[1;36m>%s\033[0m\033[1;37m\033[1m %s\033[0m\n" "$istr" "$1"
+    fi
 }
+
 echod() {
-  if [ "$DEBUG" -eq 1 ]; then
-      printf "\033[1m\033[1;37m> DEBUG:\033[0m %s\n" "$1"
-  fi
+    if [ "$DEBUG" -eq 1 ]; then
+        printf "\033[1m\033[1;37m>  DEBUG:\033[0m %s\n" "$1"
+    fi
 }
+
 echow() {
-    printf "\033[1m\033[1;33m> WARNING:\033[0m\033[1;37m\033[1m %s\033[0m\n" "$1"
+    if [ "$QUIET" -ne 1 ]; then
+      printf "\033[1m\033[1;33m> WARNING:\033[0m\033[1;37m\033[1m %s\033[0m\n" "$1" >&2
+    fi
 }
 
 echowv() {
@@ -51,16 +62,19 @@ echowv() {
 }
 
 echoe() {
-    printf "\033[1m\033[1;31m>>> ERROR:\033[0m\033[1;37m\033[1m %s\033[0m\n" "$1" >&2
+    printf "\033[1m\033[1;31m>  ERROR:\033[0m\033[1;37m\033[1m %s\033[0m\n" "$1" >&2
 }
 
 echos() {
-    printf "\033[1m\033[1;32m>>>\033[0m\033[1;37m\033[1m %s\033[0m\n" "$1"
+    if [ "$QUIET" -ne 1 ]; then
+        printf "\033[1m\033[1;32m>>>\033[0m\033[1;37m\033[1m %s\033[0m\n" "$1"
+    fi
 }
 
 echosv() {
   if [ "$VERBOSE" -eq 1 ]; then
-      printf "\033[1m\033[1;32m>\033[0m\033[1;37m\033[1m %s\033[0m\n" "$1"
+      if [ "$DEBUG" -eq 1 ]; then istr="   INFO:"; else istr=""; fi
+      printf "\033[1m\033[1;32m>%s\033[0m\033[1;37m\033[1m %s\033[0m\n" "$istr" "$1"
   fi
 }
 
@@ -74,12 +88,10 @@ is_ip() {
     return 1
 }
 
-
 shorthelp() {
   echo ""
   help | sed -n "/  $1/,/^$/p"
 }
-
 
 reset_dcrypto() {
     ssl="${1:-false}"
@@ -103,7 +115,7 @@ reset_dcrypto() {
             }
             chmod 750 -R "$DC_DIR"
             chmod 700 "$DC_KEY" "$DC_CAKEY"
-            _reset_ssl_index
+            reset_ssl_index
             echos "Reset of dcrypto SSL successful"
         fi
         if [ -n "$gpg" ] && [ "$gpg" = "true" ]; then
@@ -112,7 +124,7 @@ reset_dcrypto() {
               exit 1
             }
             mkdir -p "$DC_GPGHOME"
-            _reset_gpg_index
+            reset_gpg_index
             echos "Reset of dcrypto GPG successful"
         fi
     else
@@ -121,160 +133,8 @@ reset_dcrypto() {
     fi
 }
 
-# Parses domains & ips from comma separated string
-process_domains() {
-    domains_ips="$1"
-    orig_args="$*"
-    : "${dnsc:=1}"
-    : "${ipc:=1}"
-    domains_ips=$(printf "%s" "$domains_ips" | sed 's/,/ /g')
-    domcount=$(printf "%s" "$domains_ips" | wc -w | tr -d ' ')
-    ips=""
-    dns=""
-    for domain in $domains_ips; do
-        if is_ip "$domain"; then
-            ips="${ips}\nIP.$ipc = $domain"
-            ipc=$(("$ipc" + 1))
-        else
-            dns="${dns}\nDNS.$dnsc = $domain"
-            dnsc=$(("$dnsc" + 1))
-        fi
-    done
-    set -- "$orig_args"
-}
-
-# Creates SSL configuration file
-create_sslconfig() {
-    cfg_type="$1"
-    domains_ips="$2"
-    email="${3:-}"
-    country="${4:-}"
-    state="${5:-}"
-    locality="${6:-}"
-    organization="${7:-}"
-    orgunit="${8:-}"
-    common_name="${9:-}"
-    crldistpoints="${10:-}"
-
-    process_domains "$domains_ips"
-    if [ "$cfg_type" = "server" ]; then
-        common_name="${domains_ips%% *}"
-    elif [ "$cfg_type" = "client" ]; then
-        if [ -z "$common_name" ]; then
-            common_name="$domains_ips"
-        fi
-    fi
-
-    DC_SSLCFG=$(cat <<EOF
-[ ca ]
-default_ca = CA_default
-
-[ CA_default ]
-default_md = sha384
-default_crl_days = 30
-policy = policy_loose
-
-[ policy_loose ]
-countryName = optional
-stateOrProvinceName = optional
-localityName = optional
-organizationName = optional
-organizationalUnitName = optional
-commonName = supplied
-emailAddress = optional
-
-[ req ]
-default_md = sha384
-prompt = no
-distinguished_name = req_distinguished_name
-EOF
-)
-    if [ "$cfg_type" = "intca" ] || [ "$cfg_type" = "rootca" ]; then
-        DC_SSLCFG="${DC_SSLCFG}\nx509_extensions = v3_ca\n\n"
-    elif [ "$cfg_type" = "server" ] || [ "$cfg_type" = "client" ]; then
-        DC_SSLCFG="${DC_SSLCFG}\nreq_extensions = req_ext\n\n"
-    fi
-    DC_SSLCFG="${DC_SSLCFG}[ req_distinguished_name ]\n"
-
-    if [ -n "$country" ]; then
-        DC_SSLCFG="${DC_SSLCFG}C = ${country}\n"
-    fi
-    if [ -n "$state" ]; then
-        DC_SSLCFG="${DC_SSLCFG}ST = ${state}\n"
-    fi
-    if [ -n "$locality" ]; then
-        DC_SSLCFG="${DC_SSLCFG}L = ${locality}\n"
-    fi
-    if [ -n "$organization" ]; then
-        DC_SSLCFG="${DC_SSLCFG}O = ${organization}\n"
-    fi
-    if [ "$cfg_type" = "rootca" ]; then
-        if [ -z "$orgunit" ]; then
-            DC_SSLCFG="${DC_SSLCFG}OU = Certificate Authority\n"
-        else
-            DC_SSLCFG="${DC_SSLCFG}OU = ${orgunit}\n"
-        fi
-        if [ -z "$common_name" ]; then
-            DC_SSLCFG="${DC_SSLCFG}CN = $common_name CA\n"
-        else
-            DC_SSLCFG="${DC_SSLCFG}CN = ${common_name}\n"
-        fi
-
-    elif [ "$cfg_type" = "intca" ]; then
-        if [ -z "$orgunit" ]; then
-            DC_SSLCFG="${DC_SSLCFG}OU = Intermediate Certificate Authority\n"
-        else
-            DC_SSLCFG="${DC_SSLCFG}OU = ${orgunit}\n"
-        fi
-        if [ -z "$common_name" ]; then
-            DC_SSLCFG="${DC_SSLCFG}CN = $common_name Intermediate CA\n"
-        else
-            DC_SSLCFG="${DC_SSLCFG}CN = ${common_name}\n"
-        fi
-    elif [ "$cfg_type" = "server" ] || [ "$cfg_type" = "client" ]; then
-        DC_SSLCFG="${DC_SSLCFG}CN = $common_name\n"
-    fi
-    if [ -n "$email" ]; then
-        DC_SSLCFG="${DC_SSLCFG}emailAddress = $email\n"
-    fi
-    DC_SSLCFG="${DC_SSLCFG}\n"
-    if [ "$cfg_type" = "server" ] || [ "$cfg_type" = "client" ]; then
-        DC_SSLCFG="${DC_SSLCFG}[ req_ext ]\n"
-        DC_SSLCFG="${DC_SSLCFG}subjectKeyIdentifier = hash\n"
-        DC_SSLCFG="${DC_SSLCFG}basicConstraints = CA:FALSE\n"
-        if [ "$cfg_type" = "server" ]; then
-            DC_SSLCFG="${DC_SSLCFG}keyUsage = critical, digitalSignature, keyEncipherment\n"
-            DC_SSLCFG="${DC_SSLCFG}extendedKeyUsage = serverAuth\n"
-        elif [ "$cfg_type" = "client" ]; then
-            DC_SSLCFG="${DC_SSLCFG}keyUsage = critical, digitalSignature\n"
-            DC_SSLCFG="${DC_SSLCFG}extendedKeyUsage = clientAuth\n"
-        fi
-    fi
-
-    if [ "$domcount" -gt 1 ]; then
-        DC_SSLCFG="${DC_SSLCFG}subjectAltName = @alt_names\n\n"
-        DC_SSLCFG="${DC_SSLCFG}[ alt_names ]$ips$dns\n"
-    fi
-    if [ "$cfg_type" = "intca" ] || [ "$cfg_type" = "rootca" ]; then
-        DC_SSLCFG="${DC_SSLCFG}[ v3_ca ]\n"
-        DC_SSLCFG="${DC_SSLCFG}subjectKeyIdentifier = hash\n"
-        DC_SSLCFG="${DC_SSLCFG}authorityKeyIdentifier = keyid:always,issuer\n"
-        if [ "$cfg_type" = "intca" ]; then
-            DC_SSLCFG="${DC_SSLCFG}basicConstraints = critical, CA:TRUE, pathlen:0\n"
-        elif [ "$cfg_type" = "rootca" ]; then
-            DC_SSLCFG="${DC_SSLCFG}basicConstraints = critical, CA:TRUE\n"
-        fi
-        DC_SSLCFG="${DC_SSLCFG}keyUsage = critical, digitalSignature, cRLSign, keyCertSign\n"
-    fi
-    if [ -n "$crldistpoints" ]; then
-        DC_SSLCFG="${DC_SSLCFG}\n\ncrlDistributionPoints = URI:$crldistpoints"
-    fi
-    DC_SSLCFG=$(printf "%b" "$DC_SSLCFG")
-}
-
-
 # Maintenance and utility functions
-show_ssl_index() {
+show_index() {
     show_keys="${1:-false}"
     show_ca="${2:-false}"
     show_json="${3:-false}"
@@ -285,36 +145,37 @@ show_ssl_index() {
     fi
 
     echoi "DCrypto Index Summary"
-    echoi "===================="
+    echo "  ===================="
+    echo ""
 
     # Show default CA
     default_ca=$(jq -r '.ssl.defaultCA // "none"' "$DC_DB")
     echoi "Default CA: $default_ca"
-    echoi ""
+    echo ""
 
     if [ "$show_ca" = "true" ] || [ "$show_keys" = "false" ]; then
         echoi "Certificate Authorities:"
-        echoi "------------------------"
-
+        echo "  ------------------------"
         # Show root CAs
         echoi "Root CAs:"
-        jq -r '.ssl.ca.root | to_entries[] | "  " + .key + ": " + (.value.name // "Unnamed")' "$DC_DB" 2>/dev/null || echo "  None"
+        jq -r '.ssl.ca.root | to_entries[] | "  - " + .key' "$DC_DB" 2>/dev/null || echo "  None"
 
         # Show intermediate CAs
         echoi "Intermediate CAs:"
-        jq -r '.ssl.ca.intermediate | to_entries[] | "  " + .key + ": " + (.value.name // "Unnamed")' "$DC_DB" 2>/dev/null || echo "  None"
-        echoi ""
+        jq -r '.ssl.ca.intermediate | to_entries[] | "  - " + .key' "$DC_DB" 2>/dev/null || echo "  None"
+        echo ""
     fi
 
     if [ "$show_keys" = "true" ] || [ "$show_ca" = "false" ]; then
         echoi "Keys and Certificates:"
-        echoi "----------------------"
+        echo "  ----------------------"
         key_count=$(jq -r '.ssl.keys | length' "$DC_DB")
-        echoi "Total key entries: $key_count"
 
         if [ "$VERBOSE" -eq 1 ]; then
-            jq -r '.ssl.keys | to_entries[] | "  " + .key + ": " + (.value | to_entries | map(.key + "=" + .value) | join(", "))' "$DC_DB" 2>/dev/null
+            jq -r '.ssl.keys | to_entries[] | "  - " + .key + ": " + (.value | to_entries | map(.key + "=" + .value) | join(", "))' "$DC_DB" 2>/dev/null
         fi
+        echo ""
+        echos "Total key entries: $key_count"
     fi
 }
 
@@ -328,14 +189,14 @@ cleanup_dcrypto_files() {
     keep_backups="${6:-2}"  # Number of recent backup CSRs to keep
 
     echod "Starting cleanup_dcrypto_files with parameters:"
-    echod "     cleanup_index: $cleanup_index"
-    echod "  cleanup_orphaned: $cleanup_orphaned"
-    echod "   cleanup_backups: $cleanup_backups"
-    echod "cleanup_non_ca_keys: $cleanup_non_ca_keys"
-    echod "    cleanup_dry_run: $cleanup_dry_run"
-    echod "      keep_backups: $keep_backups"
-    echod "            DC_DIR: $DC_DIR"
-    echod "             DC_DB: $DC_DB"
+    echod "        cleanup_index: $cleanup_index"
+    echod "     cleanup_orphaned: $cleanup_orphaned"
+    echod "      cleanup_backups: $cleanup_backups"
+    echod "  cleanup_non_ca_keys: $cleanup_non_ca_keys"
+    echod "      cleanup_dry_run: $cleanup_dry_run"
+    echod "         keep_backups: $keep_backups"
+    echod "               DC_DIR: $DC_DIR"
+    echod "                DC_DB: $DC_DB"
 
     echoi "DCrypto Cleanup${cleanup_dry_run:+ (DRY RUN)}"
     echoi "=============="
@@ -421,6 +282,7 @@ cleanup_dcrypto_files() {
                             bkp_key=$(jq -r --arg idx "$index" --arg path "$old_backup" '.ssl.keys[$idx] | to_entries[] | select(.value == $path) | .key' "$DC_DB")
                             if jq -e "del(.ssl.keys.\"$index\".\"$bkp_key\")" "$DC_DB" > "$DC_DB.tmp"; then
                                 mv "$DC_DB.tmp" "$DC_DB" 2>/dev/null
+                                set_permissions_and_owner "$DC_DB" 600
                             else
                                 echoe "Failed to update index.json for backup import_file: $old_backup"
                                 continue
@@ -446,7 +308,7 @@ cleanup_dcrypto_files() {
                 fi
             fi
         done
-        rm -f "$tmpfile_backups"
+        rm -f "$tmpfile_backups" >/dev/null
         if [ "$found_backups" = "false" ]; then
             echoi "No backup files found"
         fi
@@ -480,6 +342,7 @@ cleanup_dcrypto_files() {
                 # Remove the entire index entry
                 if jq -e "del(.ssl.keys.\"$index\")" "$DC_DB" > "$DC_DB.tmp"; then
                     mv "$DC_DB.tmp" "$DC_DB" 2>/dev/null
+                    set_permissions_and_owner "$DC_DB" 600
                 else
                     echoe "Failed to update index.json for non-CA key: $key_file"
                     continue
@@ -489,7 +352,7 @@ cleanup_dcrypto_files() {
                 echov "Dry run: Would remove non-CA key import_file: $key_file"
             fi
         done
-        rm -f "$tmpfile_keys"
+        rm -f "$tmpfile_keys" >/dev/null
         if [ "$found_keys" = "false" ]; then
             echoi "No non-CA key files found"
         fi
@@ -506,45 +369,10 @@ cleanup_dcrypto_files() {
 }
 
 
-set_default_ca() {
-    ca_index="$1"
-    ca_type="${2:-root}"
-
-    if [ -z "$ca_index" ]; then
-        echoe "CA index is required"
-        return 1
-    fi
-
-    # Verify CA exists
-    ca_cert=$(_get_ca_value "$ca_type" "$ca_index" "cert")
-    if [ -z "$ca_cert" ] || [ ! -f "$ca_cert" ]; then
-        echoe "CA $ca_type:$ca_index does not exist or cert import_file not found"
-        return 1
-    fi
-
-    # Set as default
-    if jq --arg ca_index "$ca_index" '.ssl.defaultCA = $ca_index' \
-        "$DC_DB" > "${DC_DB}.tmp" \
-        && mv "${DC_DB}.tmp" "$DC_DB" \
-        && chmod 600 "$DC_DB" \
-        && chown root:"$DC_USER" "$DC_DB"; then
-        :  # Success - do nothing
-    else
-        echoe "Failed to set default CA"
-        return 1
-    fi
-
-    echos "Set default CA to: $ca_type:$ca_index"
-}
 
 
 list_certificate_authorities() {
     ca_list_type="${1:-all}"
-    verbose="${2:-false}"
-
-    if [ "$verbose" = "false" ] || [ "$VERBOSE" -eq 1 ]; then
-        verbose="true"
-    fi
 
     echoi "Certificate Authorities"
     echoi "======================"
@@ -556,7 +384,7 @@ list_certificate_authorities() {
         jq -r '.ssl.ca.root | to_entries[] | .key + " | " + (.value.name // "Unnamed") + " | " + (.value.created // "Unknown date")' "$DC_DB" 2>/dev/null | \
         while IFS='|' read -r index name created; do
             printf "  %-12s %-30s %s\n" "$index" "$name" "$created"
-            if [ "$verbose" = "true" ]; then
+            if [ "$VERBOSE" -eq 1 ]; then
                 cert_file=$(_get_ca_value "root" "$(echo "$index" | tr -d ' ')" "cert")
                 if [ -f "$cert_file" ]; then
                     echoi "    Certificate: $cert_file"
@@ -573,7 +401,7 @@ list_certificate_authorities() {
         jq -r '.ssl.ca.intermediate | to_entries[] | .key + " | " + (.value.name // "Unnamed") + " | " + (.value.created // "Unknown date")' "$DC_DB" 2>/dev/null | \
         while IFS='|' read -r index name created; do
             printf "  %-12s %-30s %s\n" "$index" "$name" "$created"
-            if [ "$verbose" = "true" ]; then
+            if [ "$VERBOSE" -eq 1 ]; then
                 cert_file=$(_get_ca_value "intermediate" "$(echo "$index" | tr -d ' ')" "cert")
                 if [ -f "$cert_file" ]; then
                     echoi "    Certificate: $cert_file"
@@ -616,13 +444,13 @@ install_docker_cert() {
             fi
 
             index="$(basename "$fp" | awk -F. '{print $(NF-1)}')"
-            _add_to_ca_database "$type" "$index" "$keyorcert" "$fp"
+            add_to_ca_database "$type" "$index" "$keyorcert" "$fp"
         done
         echod "Found import files: $import_dir"
 
     fi
 
-    if ! _ca_with_name_exists "docker"; then
+    if ! ca_with_name_exists "docker"; then
         echoi "Creating Docker Certificate Authority"
         create_certificate_authority "" "" "Docker"
     fi
@@ -649,11 +477,10 @@ install_docker_cert() {
         create_certificate_signing_request "$server_key_out" "$server_csr_out" "$domains_ips_server" "$server"
         sign_certificate_request "$server_csr_out" "$ca_cert_file" "$ca_key_file" "$server_cert_out"
 
-        chmod 400 "$server_key_out"
-        chmod 444 "$server_cert_out"
+        set_permissions_and_owner "$server_key_out" 400
+        set_permissions_and_owner "$server_cert_out" 444
+
     fi
-
-
 
     if [ "$client" = "true" ]; then
         echov "Installing Docker server certificate"
@@ -671,9 +498,8 @@ install_docker_cert() {
         create_certificate_signing_request "$client_key_out" "$client_csr_out" "localhost,127.0.0.1" "$client"
         sign_certificate_request "$client_csr_out" "$ca_cert_file" "$ca_key_file" "$client_cert_out"
 
-        chmod 400 "$client_key_out"
-        chmod 444 "$client_cert_out"
-
+        set_permissions_and_owner "$client_key_out" 400
+        set_permissions_and_owner "$client_cert_out" 444
     fi
 
 }
@@ -710,7 +536,6 @@ get_file_type() {
         if grep -qE "PRIVATE KEY" "$file"; then
             type="key"
 
-
         elif grep -qE "BEGIN CERTIFICATE" "$file"; then
             if grep -qE "CA:TRUE" "$file" && grep -qE "pathlen:" "$file"; then
                 type="intermediate"
@@ -721,12 +546,10 @@ get_file_type() {
             fi
         fi
     fi
-
     if [ -n "$type" ]; then
         echo "$type"
         return 0
     fi
-
     return 1
 }
 
@@ -743,8 +566,170 @@ check_ssl_database() {
     done
 }
 
-date_now() {
-  date -F
+set_permissions_and_owner() {
+    perm="$2"
+    if [ "$DB_USER" = "root" ] && [ "$perm" -eq 440 ]; then
+        perm=400
+    fi
+    if ! chmod "$perm" "$1" 2>/dev/null; then
+        echoe "Failed to set permissions $perm on $1"
+        return 1
+    fi
+    if ! chown "root:${DC_USER}" "$1" 2>/dev/null; then
+        echoe "Failed to set owner root:${DC_USER} on $1"
+        return 1
+    fi
+    echov "Successfully set perm ($perm) and owner 'root:$DC_USER' on $1"
+    return 0
 }
 
 
+get_dir_from_index() {
+    jq -r \
+        --arg idx "$1" \
+        '.ssl.keys[idx] | .dir
+        // .ssl.ca.root[$idx] | .dir
+        // .ssl.ca.intermediate[$idx] | .dir
+        // empty' "$DC_DB"
+}
+
+rename_file_if_exists() {
+    # Get file components
+    dir="$(dirpath "$1")"
+    basename="${1##*/}"
+    ext="${basename##*.}"
+    base="${basename%*".$ext"}"
+
+    # If file doesn't exist, return original file
+    if [ ! -f "$dir/$base.$ext" ]; then
+        echo "$1"
+        return 0
+    fi
+    # Rename with counter
+    c=1
+    if [ -n "$2" ] && echo "$base" | grep -qE "^[a-zA-Z]*\.$2$"; then
+        # Handle <base>.<name>.<counter>.<ext> (e.g., key.test.1.pem)
+        while [ -f "$dir/$base.$c.$ext" ]; do
+            c=$(("$c" + 1))
+        done
+        echo "$dir/$base.$c.$ext"
+    else
+        # Handle <base>.<counter>.<ext> (e.g., key.1.pem or custom.1.pem)
+        while [ -f "$dir/$base.$c.$ext" ]; do
+            c=$(("$c" + 1))
+        done
+        echo "$dir/$base.$c.$ext"
+    fi
+}
+
+absolutepath() {
+    if which realpath >/dev/null 2>&1; then
+        realpath "$1"
+    else
+        dir="$(dirpath "$1")"
+        basename="${1##*/}"
+        # Output the input if it's no file
+        echo "$dir/$basename"
+    fi
+    return 0
+}
+
+absolutepathidx() {
+    dir="$(dirpath "$1")"
+    basename="${1##*/}"
+    ext="${basename##*.}"
+    base="${basename%*".$ext"}"
+
+    if [ ! -f "$dir/$base.$2.$ext" ]; then
+        echo "$dir/$base.$2.$ext"
+        return 0
+    fi
+
+    c=1
+    while [ -f "$dir/$base.$2.$c.$ext" ]; do
+        c=$(("$c" + 1))
+    done
+    echo "$dir/$base.$2.$c.$ext"
+}
+
+
+dirpath() {
+    cwd="$(pwd)"
+    if echo "$1" | grep -qE "^\.\./[a-zA-Z0-9\_]+"; then
+        dir="$cwd"
+        trc="$(echo "$1" | tr '/' '\n' | grep -c "^\.\.$")"
+        while [ ! "$trc" -lt 1 ]; do
+            dir="$(echo "$dir" | sed 's|/[^/]*$||')"
+            trc=$(("$trc" - 1))
+            if [ -z "$dir" ] && [ "$trc" -gt 0 ]; then
+                echoe "Path traversal exceeds root directory."
+                return 1
+            elif [ -z "$dir" ] && [ "$trc" -eq 0 ]; then
+                dir="/"
+                break
+            fi
+        done
+    elif echo "$1" | grep -qE "^\./" || echo "$1" | grep -qv "/"; then
+        dir="$cwd"
+    elif echo "$1" | grep -qE "^/"; then
+        dir="$(echo "$1" | sed 's|/[^/]*$||')"
+    else
+        dir="$(echo "$(pwd)/$1" | sed 's|/[^/]*$||')"
+    fi
+    echo "$dir"
+    return 0
+}
+
+get_index_from_filename() {
+    basename="${1##*/}"
+    ext="${basename##*.}"
+    base="${basename%*".$ext"}"
+    if echo "$base" | grep -qE '\.'; then
+        echo "$base" | awk -F. '{print $NF}'
+        return 0
+    fi
+    return 1
+}
+
+_cleanup() {
+    echod "Cleaning up generated files..."
+    for file in $DC_CLEANUP_FILES; do
+        rm -rf "$file"
+    done
+    echod "done."
+}
+
+
+set_perms_trap() {
+    echod "Setting permissions and ownership..."
+    for file in $DC_PERM_FILES; do
+        set_permissions_and_owner "$file" 440
+    done
+    echod "done."
+}
+
+
+on_error() {
+    echoe "Error on line $LINENO"
+    set_perms_trap
+    _cleanup
+}
+
+on_exit() {
+    set_perms_trap
+    _cleanup
+}
+
+add_to_cleanup() {
+    for file in "$@"; do
+        DC_CLEANUP_FILES="${DC_CLEANUP_FILES} $file"
+        echod "Sent $file to cleanup queue $DC_CLEANUP_FILES"
+    done
+}
+
+add_to_perms() {
+    for file in "$@"; do
+        DC_PERM_FILES="${DC_PERM_FILES} $file"
+        echod "Sent $file to perms queue $DC_PERM_FILES"
+    done
+}

@@ -1,5 +1,100 @@
 # DCrypto Shell Script
 
+## TODO:
+
+#### ssl create-config
+- [x] for server cert
+- [x] for client cert
+- [x] for intermediate CA
+- [x] for rootCA
+- [x] handle domain list
+- [x] handle ip list
+- [x] set CN
+- [x] set email
+- [x] set country
+- [x] set state
+- [x] set locality
+- [x] set org
+- [x] set orgunit
+- [ ] set crldistpoints
+
+#### ssl create-key
+- [x] create unencrypted key
+- [x] create encrypted key (pbkdf2)
+- [x] create encrypted key (argon2id)
+- [x] key verification (unencrypted)
+- [x] key verification (encrypted)
+
+#### ssl create-csr
+- [x] create CSR with unencrypted key
+- [x] create CSR with encrypted key (pbkdf2)
+- [x] create CSR with encrypted key (argon2id)
+- [x] CSR verification (unencrypted CA key)
+- [x] CSR verification (encrypted CA key)
+
+#### ssl sign-csr|create-cert
+- [ ] sign with unencrypted CA key
+- [ ] sign with encrypted CA key (pbkdf2)
+- [ ] sign with encrypted CA key (argon2id)
+- [ ] cert signature verification (unencrypted)
+- [ ] cert signature verification (encrypted)
+- [ ] cert content verification (unencrypted)
+- [ ] cert content verification (encrypted)
+
+#### ssl create-ca
+- [x] create rootCA self-signed (key not encrypted)
+- [x] create rootCA self-signed (pbkdf2 encrypted key)
+- [x] create rootCA self-signed (argon2id encrypted key)
+- [x] create intermediate CA (key not encrypted)
+- [x] create intermediate CA (pbkdf2 encrypted key)
+- [x] create intermediate CA (argon2id encrypted key)
+
+### ssl create-crl
+- [ ] complete
+
+### ssl revoke-cert
+- [ ] complete
+
+### ssl verify-cert
+- [ ] complete
+
+### ssl encrypt
+- [ ] asymmetric
+- [x] symmetric (pbkdf2)
+- [ ] symmetric (argon2id)
+
+### ssl decrypt
+- [ ] asymmetric
+- [x] symmetric (pbkdf2)
+- [ ] symmetric (argon2id)
+
+### gpg import
+- [ ] complete
+
+### gpg export
+- [ ] complete
+
+### gpg encrypt
+- [ ] complete
+
+### gpg decrypt
+- [ ] complete
+
+### show-index
+- [x] normal output
+- [x] json output
+
+### reset-dcrypto
+- [x] ssl reset
+- [x] gpg reset
+
+
+### misc
+- [x] debug mode
+- [x] verbose mode
+- [x] quiet mode (no stdout)
+
+
 A POSIX-compliant shell script to manage SSL certificates and GPG keys with strong encryption and Argon2id key derivation.
 
 ## Table of Contents
@@ -17,7 +112,6 @@ A POSIX-compliant shell script to manage SSL certificates and GPG keys with stro
   - [ssl decrypt](#ssl-decrypt)
   - [ssl create-crl](#ssl-create-crl)
   - [ssl revoke-cert](#ssl-revoke-cert)
-  - [ssl show-index](#ssl-show-index)
   - [ssl create-config](#ssl-create-config)
 - [GPG Commands](#gpg-commands)
   - [gpg import](#gpg-import)

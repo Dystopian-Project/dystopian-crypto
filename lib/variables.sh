@@ -1,0 +1,22 @@
+# shellcheck shell=sh
+# shellcheck disable=SC2034
+
+AUTHOR="DCx7C5 <dcxdevelopment@protonmail.com>"
+VERSION="0.1"
+VERBOSE=0
+DEBUG=0
+QUIET=0
+DC_USER="$(whoami)"
+DC_DIR=/etc/dcrypto
+DC_CA="$DC_DIR/ca"
+DC_CERT="$DC_DIR/cert"
+DC_KEY="$DC_CERT/private"
+DC_CRL="$DC_DIR/crl"
+DC_DB="$DC_DIR/db.json"
+DC_CAKEY="$DC_CA/private"
+DC_OLD="$DC_DIR/old"
+DC_GPGHOME="$DC_DIR/gpg"
+RAND="$(od -An -N2 -i /dev/urandom | tr -d ' ' | head -c 4)"
+DC_EXIT_STATE=""
+DC_CLEANUP_FILES="$DC_DIR/**/*.tmp"
+DC_PERM_FILES="$DC_DB"
