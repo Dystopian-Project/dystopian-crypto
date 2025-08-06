@@ -354,6 +354,7 @@ _gpg_create_primary_key() {
         return 1
     fi
 
+
     fingerprint=$(echo "$stdout" | grep -A 1 -E "pub" | tail -1 | sed 's/\ //g')
     return 0
 }
