@@ -90,7 +90,7 @@ is_ip() {
 
 shorthelp() {
   echo ""
-  help | sed -n "/  $1/,/^$/p"
+  help | sed -n "/^  $1/,/^$/p"
 }
 
 reset_dcrypto() {
@@ -99,31 +99,36 @@ reset_dcrypto() {
     if askyesno "Are you sure you want to reset the config and keys?" "n";then
         if askyesno "Do you want to backup the directory first?" "y"; then
             cp -rf "$DC_DIR" "${DC_DIR}.bkp" 2>/dev/null || {
-              echoe "Problem backing up keys and config"
-              exit 1
+                echoe "Problem backing up keys and config"
+                exit 1
             }
             echos "Backup successful @ /etc/dcrypto.bkp"
         fi
         if [ -n "$ssl" ] && [ "$ssl" = "true" ]; then
             rm -rf "${DC_CA}" "{$DC_CERT}" "${DC_CRL}" 2>/dev/null || {
-              echoe "Problem resetting dcrypto ssl"
-              exit 1
+                echoe "Problem resetting dcrypto ssl"
+                exit 1
             }
             mkdir -p "$DC_CAKEY" "$DC_KEY" "$DC_CRL" || {
                 echoe "Problem creating ssl directories"
                 exit 1
             }
-            chmod 750 -R "$DC_DIR"
-            chmod 700 "$DC_KEY" "$DC_CAKEY"
+            set_permissions_and_owner "$DC_DIR" 750
+            set_permissions_and_owner "$DC_KEY" 700
+            set_permissions_and_owner "$DC_CAKEY" 700
             reset_ssl_index
             echos "Reset of dcrypto SSL successful"
         fi
         if [ -n "$gpg" ] && [ "$gpg" = "true" ]; then
-            rm -rf "${DC_GPGHOME}" 2>/dev/null || {
+            rm -rf "${DC_GNUPG}" 2>/dev/null || {
               echoe "Problem resetting dcrypto gpg"
               exit 1
             }
-            mkdir -p "$DC_GPGHOME"
+            mkdir -p "$DC_GNUPG" || {
+                echoe "Failed creating new gpg home directory"
+                exit 1
+            }
+            set_permissions_and_owner "$DC_GNUPG" 700
             reset_gpg_index
             echos "Reset of dcrypto GPG successful"
         fi
@@ -198,7 +203,7 @@ cleanup_dcrypto_files() {
     echod "               DC_DIR: $DC_DIR"
     echod "                DC_DB: $DC_DB"
 
-    echoi "DCrypto Cleanup${cleanup_dry_run:+ (DRY RUN)}"
+    echoi "DCrypto Cleanup${cleanup_dry_run:+$([ "$cleanup_dry_run" = "true" ] && echo "DRY RUN")}"
     echoi "=============="
 
     # Clean specific index
@@ -579,7 +584,11 @@ set_permissions_and_owner() {
         echoe "Failed to set owner root:${DC_USER} on $1"
         return 1
     fi
-    echov "Successfully set perm ($perm) and owner 'root:$DC_USER' on $1"
+    if [ "$1" != "$DC_DB" ]; then
+        echov "Successfully set perm ($perm) and owner 'root:$DC_USER' on $1"
+    else
+        echod "Successfully set perm ($perm) and owner 'root:$DC_USER' on $1"
+    fi
     return 0
 }
 
@@ -628,7 +637,6 @@ absolutepath() {
     else
         dir="$(dirpath "$1")"
         basename="${1##*/}"
-        # Output the input if it's no file
         echo "$dir/$basename"
     fi
     return 0
@@ -680,6 +688,7 @@ dirpath() {
     return 0
 }
 
+
 get_index_from_filename() {
     basename="${1##*/}"
     ext="${basename##*.}"
@@ -690,6 +699,7 @@ get_index_from_filename() {
     fi
     return 1
 }
+
 
 _cleanup() {
     echod "Cleaning up generated files..."
@@ -715,10 +725,12 @@ on_error() {
     _cleanup
 }
 
+
 on_exit() {
     set_perms_trap
     _cleanup
 }
+
 
 add_to_cleanup() {
     for file in "$@"; do
@@ -727,9 +739,102 @@ add_to_cleanup() {
     done
 }
 
+
 add_to_perms() {
     for file in "$@"; do
         DC_PERM_FILES="${DC_PERM_FILES} $file"
         echod "Sent $file to perms queue $DC_PERM_FILES"
     done
+}
+
+#
+## GPG FUNCTIONS
+#
+
+
+get_index_from_gpg() {
+    if ! gpg --homedir "$DC_GNUPG" --list-keys --keyid-format long "$1" | \
+         grep uid | \
+         awk -F'[][]' '{print $(NF-0)}' | \
+         awk -F' <' '{print $1}' | \
+         sed -e 's/\-/\_/g' -e 's/\ /\_/g' | \
+         tr "[:upper:]" "[:lower:]"; then
+        echoe "Failed getting index from gpg name"
+        return 1
+    fi
+    return 0
+}
+
+
+get_name_from_gpg() {
+    if ! gpg --homedir "$DC_GNUPG" --list-keys --keyid-format long "$1" | \
+         grep uid | \
+         awk -F'[][]' '{print $(NF-0)}' | \
+         awk -F' <' '{print $1}'; then
+        echoe "Failed getting Name from $1"
+        return 1
+    fi
+    return 0
+}
+
+
+get_email_from_gpg() {
+    if ! gpg --homedir "$DC_GNUPG" --list-keys --keyid-format long "$1" | \
+         grep uid | \
+         awk -F'<' '{print $2}' | \
+         awk -F'>' '{print $1}'; then
+        echoe "Error getting email address from $1"
+        return 1
+    fi
+    return 0
+}
+
+
+get_fingerprint_from_gpg() {
+    if ! gpg --homedir "$DC_GNUPG" --fingerprint --keyid-format long "$1" | \
+         grep -i finger | \
+         awk -F'= ' '{print $2}'; then
+        echoe "Failed getting fingerprint from $1"
+        return 1
+    fi
+    return 0
+}
+
+
+get_subkey_ids_from_gpg() {
+    if ! gpg --homedir "$DC_GNUPG" --list-keys --keyid-format long "$1" | \
+         grep sub | \
+         awk -F'/' '{print $2}' | \
+         awk -F' ' '{print $1}'; then
+        echoe "Failed getting subkeys from $1"
+        return 1
+    fi
+    return 0
+}
+
+
+create_gpg_filename() {
+    index="$1"
+
+    usage="$2"
+    armor="${3:-false}"
+    typestr="${4:-}"
+
+    if [ "$armor" = "false" ] && { [ "$typestr" = "public" ] || [ "$typestr" = "sub" ]; }; then
+        ext="gpg"
+    elif [ "$armor" = "false" ] && { [ "$typestr" = "secret" ] || [ "$typestr" = "ssb" ]; }; then
+        ext="key"
+    elif [ "$armor" = "true" ]; then
+        ext="asc"
+    fi
+
+    if [ "$usage" = "S" ]; then
+        usage="signing"
+    elif [ "$usage" = "E" ]; then
+        usage="encrypt"
+    elif [ "$usage" = "A" ]; then
+        usage="auth"
+    fi
+
+    echo "$index-$(date "+%Y%m%d_%H%M")-$usage-$typestr.$ext"
 }
