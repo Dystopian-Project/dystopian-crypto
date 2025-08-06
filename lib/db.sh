@@ -62,6 +62,7 @@ reset_ssl_index() {
     # Reset SSL section to default state
     if jq '.ssl = {
         defaultCA: "",
+        encrypted: [],
         keys: {},
         ca: {
             root: {},
@@ -80,8 +81,10 @@ reset_ssl_index() {
 reset_gpg_index() {
     # Reset GPG section to default state
     if jq '.gpg = {
-        defaultHome: "",
         defaultKey: "",
+        defaultSign: "",
+        defaultAuth: "",
+        defaultEncrypt: "",
         keys: {}
     }' "$DC_DB" > "${DC_DB}.tmp"; then
         mv "${DC_DB}.tmp" "$DC_DB" || {
@@ -142,12 +145,6 @@ delete_key_from_ca_index() {
 
     mv "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed moving $DC_DB"
-        rm -f "$DC_DB.tmp"
-        return 1
-    }
-
-    rm -f "${DC_DB}.tmp" || {
-        echoe "Removing $DC_DB.tmp failed"
         rm -f "$DC_DB.tmp"
         return 1
     }
@@ -250,7 +247,17 @@ index_exists() {
         '.ssl.ca.root[$idx]
         // .ssl.ca.intermediate[$idx]
         // .ssl.keys[$idx]
-        // empty' "$DC_DB" >/dev/null; then
+        // empty' "$DC_DB" >/dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
+
+
+gpg_index_exists() {
+    if jq -e \
+          --arg idx "$1" \
+          '.gpg.keys[$idx] // empty' "$DC_DB" >/dev/null 2>&1; then
         return 0
     fi
     return 1
@@ -261,7 +268,7 @@ root_ca_index_exists() {
     if jq -e \
         --arg idx "$1" \
         '.ssl.ca.root[$idx]
-        // empty' "$DC_DB" >/dev/null; then
+        // empty' "$DC_DB" >/dev/null 2>&1; then
         return 0
     fi
     return 1
@@ -272,7 +279,7 @@ int_ca_index_exists() {
     if jq -e \
         --arg idx "$1" \
         '.ssl.ca.intermediate[$idx]
-        // empty' "$DC_DB" >/dev/null; then
+        // empty' "$DC_DB" >/dev/null 2>&1; then
       return 0
     fi
     return 1
@@ -283,7 +290,7 @@ keys_index_exists() {
     if jq -e \
         --arg idx "$1" \
         '.ssl.keys[$idx]
-        // empty' "$DC_DB" >/dev/null; then
+        // empty' "$DC_DB" >/dev/null 2>&1; then
       return 0
     fi
     return 1
@@ -294,23 +301,12 @@ add_to_ssl_keys_database() {
     index="$1"
     key="$2"
     value="$3"
-
-    if [ -z "$index" ] || [ -z "$key" ] || [ -z "$value" ]; then
-        echoe "Index, key, and value are required"
-        return 1
-    fi
-
-    # Convert value to realpath if it's a import_file that exists
-    if [ -f "$value" ]; then
-        value="$(absolutepath "$value")"
-    fi
-
-    if ! jq --arg idx "$index" \
-      --arg key "$key" \
-      --arg value "$value" \
+    if ! jq --arg idx "$1" \
+      --arg key "$2" \
+      --arg value "$3" \
       '.ssl.keys[$idx][$key] = $value' \
       "$DC_DB" > "${DC_DB}.tmp"; then
-        echoe "Failed to add $key to index"
+        echoe "Failed to add $2 to index"
         rm -f "${DC_DB}.tmp"
         return 1
     fi
@@ -320,16 +316,16 @@ add_to_ssl_keys_database() {
         rm -f "${DC_DB}.tmp"
         return 1
     }
-    echod "Successfully updated ssl keys database for ssl: keys: $index: $key"
+    echod "Updating ssl keys database successful for ssl: keys: $1: $2 = $3"
     return 0
 }
+
 
 add_to_ca_database() {
     storage_type="$1"
     index="$2"
     key="$3"
     value="$4"
-    echod "Adding to CA database: type=$storage_type, index=$index, key=$key, value=$value"
     if ! jq --arg type "$storage_type" \
             --arg idx "$index" \
             --arg key "$key" \
@@ -346,52 +342,85 @@ add_to_ca_database() {
         rm -f "${DC_DB}.tmp"
         return 1
     }
-    echod "Successfully updated ssl CA database for ssl: $storage_type: $index: $key"
+    echod "Updating ssl CA database successful for ssl: $storage_type: $index: $key = $value"
     return 0
 }
 
-find_index_by_key_value() {
-    search_key="$1"
-    search_value="$2"
-    jq -r \
-        --arg key "$search_key" \
-        --arg value "$search_value" \
-        '.ssl.keys | to_entries[] | select(.value[$key] == $value) | .key
-        // .ssl.ca.root | to_entries[] | select(.value[$key] == $value) | .key
-        // .ssl.ca.intermediate | to_entries[] | select(.value[$key] == $value) | .key
-        // empty' "$DC_DB"
+
+add_to_gpg_database() {
+    if ! jq --arg idx "$1" \
+            --arg key "$2" \
+            --arg val "$3" \
+            '.gpg.keys[$idx][$key] = $val' \
+            "$DC_DB" > "${DC_DB}.tmp"; then
+        echoe "Failed to update GPG database for gpg: $1: $2 : $3"
+        rm -f "${DC_DB}.tmp"
+        return 1
+    fi
+
+    mv "${DC_DB}.tmp" "$DC_DB" || {
+        echoe "Failed to move temporary database file to $DC_DB"
+        rm -f "${DC_DB}.tmp"
+        return 1
+    }
+    echod "Updating GPG database successful for gpg: keys: $1: $2 = $3"
+    return 0
 }
+
+
+find_index_by_key_value() {
+    if ! jq -r \
+            --arg key "$1" \
+            --arg value "$2" \
+            '.ssl.keys | to_entries[] | select(.value[$key] == $value) | .key
+            // .ssl.ca.root | to_entries[] | select(.value[$key] == $value) | .key
+            // .ssl.ca.intermediate | to_entries[] | select(.value[$key] == $value) | .key
+            // empty' "$DC_DB"; then
+        return 1
+    fi
+    return 0
+}
+
+
+find_gpg_index_by_key_value() {
+    if ! jq -r \
+            --arg key "$1" \
+            --arg value "$2" \
+            '.gpg.keys | to_entries[] | select(.value[$key] == $value) | .key // empty' "$DC_DB"; then
+        return 1
+    fi
+    return 0
+}
+
 
 find_keys_index_by_key_value() {
-    search_key="$1"
-    search_value="$2"
-
-    jq -r \
-        --arg key "$search_key" \
-        --arg value "$search_value" \
-        '.ssl.keys | to_entries[] | select(.value[$key] == $value) | .key
-        // empty' "$DC_DB"
+    if ! jq -r \
+            --arg key "$1" \
+            --arg value "$2" \
+            '.ssl.keys | to_entries[] | select(.value[$key] == $value) | .key
+            // empty' "$DC_DB"; then
+        return 1
+    fi
+    return 0
 }
+
 
 find_ca_index_by_key_value() {
-    key="$1"
-    value="$2"
-    jq -r \
-        --arg key "$key" \
-        --arg val "$value" \
-        '.ssl.ca.root | to_entries[] | select(.value[$key] == $val) | "root:\(.key)"
-        // .ssl.ca.intermediate | to_entries[] | select(.value[$key] == $val) | "intermediate:\(.key)"
-        // empty' "$DC_DB"
+    if ! jq -r \
+            --arg key "$1" \
+            --arg val "$2" \
+            '.ssl.ca.root | to_entries[] | select(.value[$key] == $val) | "root:\(.key)"
+            // .ssl.ca.intermediate | to_entries[] | select(.value[$key] == $val) | "intermediate:\(.key)"
+            // empty' "$DC_DB"; then
+        return 1
+    fi
+    return 0
 }
+
 
 cleanup_ca_index() {
     ca_type="$1"
     ca_index="$2"
-
-    if [ -z "$ca_type" ] || [ -z "$ca_index" ]; then
-        echoe "Error: CA type and index are required"
-        return 1
-    fi
 
     if ! jq -e --arg type "$ca_type" \
             --arg idx "$ca_index" \
@@ -412,9 +441,159 @@ cleanup_ca_index() {
     return 0
 }
 
+cleanup_gpg_index() {
+    if ! jq -e --arg idx "$1" 'del(.gpg.keys[$idx])' "$DC_DB" > "${DC_DB}.tmp"; then
+        echoe "Failed to cleanup .gpg.keys.$1"
+        rm -f "${DC_DB}.tmp"
+        return 1
+    fi
 
-add_to_serial_file() {
-    index="$1"
-    serial="$2"
-    printf "%s" "$2" >> "$DC_CA"
+    mv "${DC_DB}.tmp" "$DC_DB" || {
+        echoe "Failed to move temporary database file to $DC_DB"
+        rm -f "${DC_DB}.tmp"
+        return 1
+    }
+    return 0
+}
+
+add_to_encrypted_db() {
+    if ! jq -e --arg path "$1" --arg salt "$2" \
+         '.ssl.encrypted += [{"path": $path, "salt": $salt}]' "$DC_DB" > "${DC_DB}.tmp"; then
+        echoe "Something went wrong"
+        return 1
+    fi
+
+    mv "${DC_DB}.tmp" "$DC_DB" || {
+        echoe "Not able to save temporary db as database file."
+        return 1
+    }
+    return 0
+}
+
+
+remove_from_encrypted_db_by_path() {
+    if ! jq -e --arg path "$1" \
+         '.ssl.encrypted = [.ssl.encrypted[] | select(.path != $path)]' "$DC_DB" > "${DC_DB}.tmp"; then
+        echoe "Something went wrong"
+        return 1
+    fi
+
+    mv "${DC_DB}.tmp" "$DC_DB" || {
+        echoe "Not able to save temporary db as database file."
+        return 1
+    }
+    return 0
+}
+
+
+add_to_gpg_subkeys() {
+    if ! jq -e \
+            --arg idx "$1" \
+            --arg subidx "$2" \
+            --arg key "$3" \
+            --arg value "$4" \
+        '.gpg.keys[$idx].subkeys[$subidx][$key] = $value' "$DC_DB" > "${DC_DB}.tmp"; then
+        echoe "Something went wrong while adding subkeys"
+    fi
+    mv "${DC_DB}.tmp" "$DC_DB" || {
+        echoe "Not able to save temporary db as database file."
+        return 1
+    }
+    echod "Updating GPG database successful for gpg: keys: $1: subkeys: $2: $3 = $4"
+    return 0
+}
+
+
+get_value_from_gpg_index() {
+    jq -r \
+        --arg idx "$1" \
+        --arg value "$2" \
+        '.gpg.keys[$idx][$value] //
+        empty' "$DC_DB"
+}
+
+get_keyid_from_key_by_usage() {
+    key_id=$(jq -r \
+                --arg idx "$1" \
+                --arg usage "$2" \
+                '.gpg.keys[$idx].subkeys[] | select(.usage == $usage) | .keyId //
+                 empty' "$DC_DB" 2>/dev/null)
+
+    if [ -z "$key_id" ]; then
+        usage=$(jq -r \
+                   --arg idx "$1" \
+                   --arg usage "$2" \
+                   '.gpg.keys[$idx].usage //
+                    empty' "$DC_DB" 2>/dev/null)
+
+        if echo "$usage" | grep -qE "$2"; then
+            key_id="$(jq -r \
+                         --arg idx "$1" \
+                         --arg usage "$2" \
+                         '.gpg.keys[$idx].keyId //
+                          empty' "$DC_DB" 2>/dev/null
+            )"
+        fi
+    fi
+
+    if [ -z "$key_id" ]; then
+        echoe "Failed getting keyId from $1 by usage: $2"
+        return 1
+    fi
+
+    echo "$key_id"
+    return 0
+}
+
+get_fingerprint_from_key_by_usage() {
+    fingerprint=$(jq -r \
+                --arg idx "$1" \
+                --arg usage "$2" \
+                '.gpg.keys[$idx].subkeys[] | select(.usage == $usage) | .fingerprint //
+                 empty' "$DC_DB" 2>/dev/null)
+
+    if [ -z "$key_id" ]; then
+        usage=$(jq -r \
+                   --arg idx "$1" \
+                   --arg usage "$2" \
+                   '.gpg.keys[$idx].usage //
+                    empty' "$DC_DB" 2>/dev/null)
+
+        if echo "$usage" | grep -qE "$2"; then
+            fingerprint="$(jq -r \
+                         --arg idx "$1" \
+                         --arg usage "$2" \
+                         '.gpg.keys[$idx].fingerprint //
+                          empty' "$DC_DB" 2>/dev/null
+            )"
+        fi
+    fi
+
+    if [ -z "$key_id" ]; then
+        echoe "Failed getting keyId from $1 by usage: $2"
+        return 1
+    fi
+
+    echo "$fingerprint"
+    return 0
+}
+
+get_index_by_fingerprint() {
+  # try from subkeys
+  idx=$(jq -r --arg fp "$1" '.gpg.keys | to_entries[] | select(.value.subkeys[]?.fingerprint == $fp) | .key //
+               empty' "$DC_DB" 2>/dev/null)
+
+  if [ -z "$idx" ]; then
+      # try from primary key
+      idx=$(jq -r --arg fp "$1" '.gpg.keys | to_entries[] | select(.value.fingerprint == $fp) | .key //
+       empty' "$DC_DB" 2>/dev/null)
+  fi
+
+  if [ -z "$idx" ]; then
+      echoe "Failed fetching index from fingerprint: $1"
+      return 1
+  fi
+
+  echo "$idx"
+  return 0
 }
