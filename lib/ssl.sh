@@ -238,7 +238,7 @@ _get_parent_cert_index() {
 
     # Get the issuer of the server certificate
     issuer_cn="$(openssl x509 -in "$cert_file" -noout -issuer | sed -n 's/.*CN[ =]\+\([^/]*\).*/\1/p')"
-    echo "$issuer_cn" | sed -e 's/\-/\_/' -e 's/\ /\_/' | tr "[:upper:]" "[:lower:]"
+    echo "$issuer_cn" | sed -e 's/\-/\_/g' -e 's/\ /\_/g' | tr "[:upper:]" "[:lower:]"
     return 0
 }
 
@@ -702,7 +702,7 @@ _create_and_verify_fullchain() {
 
 create_private_key() {
     key_name="${1:-}" && [ -z "$key_name" ] && echoe "Key name is required" && return 1
-    index="${key_name:+"$(echo "$1" | sed -e 's/\ /\_/' -e 's/\-/\_/' | tr "[:upper:]" "[:lower:]")"}"
+    index="${key_name:+"$(echo "$1" | sed -e 's/\ /\_/g' -e 's/\-/\_/g' | tr "[:upper:]" "[:lower:]")"}"
     if index_exists "$index"; then
         echoe "Normalized key_name:$key_name ($index) already exists in database"
         return 1
@@ -791,7 +791,7 @@ create_private_key() {
 
 create_certificate_authority() {
     ca_name="$1" && [ -z "$1" ] && echoe "CA name is required" && return 1
-    index="${ca_name:+$(echo "$ca_name" | sed -e 's/\-/\_/' -e 's/\ /\_/' | tr "[:upper:]" "[:lower:]")}"
+    index="${ca_name:+$(echo "$ca_name" | sed -e 's/\-/\_/g' -e 's/\ /\_/g' | tr "[:upper:]" "[:lower:]")}"
 
     if index_exists "$index"; then
         echoe "Normalized $ca_name ($index) already exists in database"
@@ -829,7 +829,7 @@ create_certificate_authority() {
     days="${17:-3650}"
 
     if [ "$intermediate" = "true" ]; then
-        root_ca_index="${18:+$(echo "${18}" | sed -e 's/\ /\_/' -e 's/\-/\_/' | tr "[:upper:]" "[:lower:]")}"
+        root_ca_index="${18:+$(echo "${18}" | sed -e 's/\ /\_/g' -e 's/\-/\_/g' | tr "[:upper:]" "[:lower:]")}"
         root_ca_index="${root_ca_index:-$(jq -r '.ssl.defaultCA // empty' "$DC_DB")}"
 
         if [ -z "$root_ca_index" ] && [ "$intermediate" = "true" ]; then
@@ -1058,7 +1058,7 @@ create_certificate_authority() {
 
 create_certificate_signing_request() {
     key_name="$1" && [ -z "$key_name" ] && echoe "Key name is required" && return 1
-    index="${key_name:+$(echo "$1" | sed -e 's/\ /\_/' -e 's/\-/\_/' | tr "[:upper:]" "[:lower:]")}"
+    index="${key_name:+$(echo "$1" | sed -e 's/\ /\_/g' -e 's/\-/\_/g' | tr "[:upper:]" "[:lower:]")}"
 
     if ! index_exists "$index" ; then
         echow "Normalized $ca_name $index doesn't exist in database. Fallback to fetching from filename..."
@@ -1180,36 +1180,30 @@ create_certificate_signing_request() {
 
 sign_certificate_request() {
     csr_name="$1" && [ -z "$1" ] && echoe "CSR name is required" && return 1
-    index="${csr_name:+$(echo "$csr_name" | sed -e 's/\-/\_/' -e 's/\ /\_/' | tr "[:upper:]" "[:lower:]")}"
+
+    csr_file="${2:+$([ -s "${2}" ] && absolutepath "${2}")}"
+    index="${csr_name:+$(echo "$csr_name" | sed -e 's/\-/\_/g' -e 's/\ /\_/g' | tr "[:upper:]" "[:lower:]")}"
+
+    csr_file="${index:+$(get_value_from_keys_index "$index" "csr")}"
+    index="${index:-${csr_file:+$(get_index_from_filename "$csr_file")}}"
 
     if ! index_exists "$index"; then
         echoe "Normalized $csr_name ($index) doesn't exist in database."
         return 1
     fi
 
-    csr_file="${2:-$([ -s "${2}" ] && absolutepath "${2}")}"
-    csr_file="${index:+$(get_value_from_keys_index "$index" "csr")}"
-
-    if [ ! -s "$csr_file" ] && [ -z "$csr_name" ]; then
-        echoe "Error"
-        return 1
-    fi
-
     cert_out="${3:+$(absolutepathidx "$3" "$index")}"
     cert_out="${3:-$(absolutepathidx "$DC_CERT/cert.pem" "$index")}"
 
-    ca_index="${4:+$(echo "${4}" | sed -e 's/\ /\_/' -e 's/\-/\_/' | tr "[:upper:]" "[:lower:]")}"
-    ca_index="${ca_index:-$(jq -r '.ssl.defaultCA // empty' "$DC_DB")}"
-
+    ca_index="${4:+$(echo "${4}" | sed -e 's/\ /\_/g' -e 's/\-/\_/g' | tr "[:upper:]" "[:lower:]")}"
     ca_cert_file="${5:+$([ -s "${5}" ] && absolutepath "${5}")}"
-    ca_cert_file="${ca_index:+$(get_value_from_ca_index "$ca_index" "cert")}"
-
     ca_key_file="${6:+$([ -s "${6}" ] && absolutepath "${6}")}"
-    ca_key_file="${ca_index:+$(get_value_from_ca_index "$ca_index" "key")}"
-
     ca_pass="${7:+$([ -s "${7}" ] && absolutepath "${7}")}"
-
     ca_salt="${8:+$([ -s "${8}" ] && absolutepath "${8}")}"
+
+    ca_index="${ca_index:-$(jq -r '.ssl.defaultCA // empty' "$DC_DB")}"
+    ca_cert_file="${ca_index:+$(get_value_from_ca_index "$ca_index" "cert")}"
+    ca_key_file="${ca_index:+$(get_value_from_ca_index "$ca_index" "key")}"
     ca_salt="${ca_index:+$(get_value_from_ca_index "$ca_index" "salt")}"
 
     validity_days="${9:-1}"
@@ -1255,6 +1249,7 @@ sign_certificate_request() {
         echov "Output directory created successfully"
         set_permissions_and_owner "$cert_dir" 750 || {
             echoe "Failed calling set_permissions_and_owner $cert_dir 750"
+            return 1
         }
     fi
 
@@ -1405,8 +1400,6 @@ create_cert_chain() {
         echoe "Failed to create certificate chain"
         return 1
     }
-
-
 
     # Verify the chain is valid
     if ! openssl verify -CAfile "$ca_file" "$cert_file" >/dev/null 2>&1; then
@@ -1608,17 +1601,17 @@ create_certificate_revocation_list() {
 
         return 0
     )
-
     return $?
 }
 
 
-revoke_certificate() {
+_revoke_certificate() {
     cert_file="$1"
     ca_key_file="$2"
     ca_cert_file="$3"
-    ca_pass="$4"
-    reason="$5"
+    pass="$4"
+    salt="$5"
+    reason="$6"
 
     # Check for default CA in index.json if CA files not provided
     if [ -z "$ca_cert_file" ] || [ -z "$ca_key_file" ]; then
@@ -1631,19 +1624,8 @@ revoke_certificate() {
     fi
 
     # Set defaults
-    ca_key_file="${ca_key_file:-"$DC_CA/ca-key.pem"}"
-    ca_cert_file="${ca_cert_file:-"$DC_CA/ca.pem"}"
-
-    # Validate inputs
-    if [ ! -f "$cert_file" ]; then
-        echoe "Certificate file '$cert_file' does not exist"
-        return 1
-    fi
-
-    if [ ! -f "$ca_key_file" ] || [ ! -f "$ca_cert_file" ]; then
-        echoe "CA key or certificate does not exist"
-        return 1
-    fi
+    ca_key_file="${ca_key_file:-$(absolutepath "$DC_CA/ca-key.pem")}"
+    ca_cert_file="${ca_cert_file:-$(absolutepath "$DC_CA/ca.pem")}"
 
     # Find CA index and config
     ca_index=$(find_name_by_key_value "cert" "$ca_cert_file")
@@ -1660,29 +1642,25 @@ revoke_certificate() {
         return 1
     fi
 
-    echo "Revoking certificate: $cert_file"
-    echo "Reason: $reason"
-
     (
-        if [ -n "$ca_pass" ]; then
-
-            salt_file="$(get_value_from_index "$ca_index" "salt")"
-
-            if [ ! -f "$salt_file" ]; then
-                echoe "Salt file $salt_file does not exist"
-                return 1
-            fi
-
-            # Get password content
-            if [ -f "$ca_pass" ]; then
-                ca_pass_content="$(cat "$ca_pass")"
-            else
-                ca_pass_content="$ca_pass"
-            fi
-
+        if [ -n "$pass" ] && [ "$no_argon" = "false" ]; then
             # Generate derived key for decryption
-            _create_argon2id_derived_key_pw "$ca_pass_content" "$salt_file" | \
-                openssl ca \
+            echod "Calling _create_argon2id_derived_key_pw pass salt | openssl ca ..."
+            _create_argon2id_derived_key_pw "$pass" "$salt" | \
+            openssl ca \
+                    -revoke "$cert_file" \
+                    -keyfile "$ca_key_file" \
+                    -cert "$ca_cert_file" \
+                    -config "$config_file" \
+                    -crl_reason "$reason" \
+                    -passin "stdin" 2>/dev/null || {
+                echoe "Failed to revoke certificate (with encrypted key)"
+                return 1
+            }
+        elif [ -n "$pass" ] && [ "$no_argon" = "true" ]; then
+            echod "Calling _create_pbkdf2_derived_key_pw pass salt | openssl ca ..."
+            _create_pbkdf2_derived_key_pw "$pass" | \
+            openssl ca \
                     -revoke "$cert_file" \
                     -keyfile "$ca_key_file" \
                     -cert "$ca_cert_file" \
@@ -1694,6 +1672,7 @@ revoke_certificate() {
             }
         else
             # Revoke certificate without password
+            echod "Calling openssl ca ..."
             openssl ca \
                 -revoke "$cert_file" \
                 -keyfile "$ca_key_file" \
@@ -1707,8 +1686,8 @@ revoke_certificate() {
         return 0
     )
     status=$?
+    echod "Subshell for certificate revocation exited with status: $status"
     if [ "$status" -eq 0 ]; then
-        set_permissions_and_owner ""
         return 0
     fi
     return 1
@@ -1817,42 +1796,6 @@ verify_certificate() {
         echowv "CA Subject:          $ca_subject"
     fi
 }
-
-# Helper function for batch verification
-verify_certificate_chain() {
-    cert_file="$1"
-    intermediate_ca="$2"
-    root_ca="$3"
-
-    if [ -z "$cert_file" ] || [ -z "$root_ca" ]; then
-        echoe "Certificate and root CA are required"
-        return 1
-    fi
-
-    if [ -n "$intermediate_ca" ] && [ -f "$intermediate_ca" ]; then
-        # Create temporary CA bundle
-        ca_bundle="/tmp/ca-bundle-$$.pem"
-        cat "$root_ca" "$intermediate_ca" > "$ca_bundle" || {
-            echoe "Failed to create CA bundle"
-            return 1
-        }
-
-        # Verify with intermediate CA
-        result=$(verify_certificate "$cert_file" "$ca_bundle" true)
-        verify_result=$?
-
-        # Cleanup
-        rm -f "$ca_bundle" 2>/dev/null
-
-        echo "$result"
-        return $verify_result
-    else
-        # Direct verification with root CA
-        verify_certificate "$cert_file" "$root_ca" true
-        return $?
-    fi
-}
-
 
 
 # TODO: Finish SSL encrypt and decrypt functions
@@ -1998,12 +1941,15 @@ ssl_decrypt() (
 )
 
 
+
 import_ssl() {
-    index="$1"
-    import="$2"
-    scan_depth="$3"
-    copy_files="$4"
-    move_files="$5"
+    name="${1:-}"
+    index="${name:+$(echo "$name" | sed -e 's/\ /\_/g' -e 's/\-/\_/g' | tr "[:upper:]" "[:lower:]")}"
+
+    import="${2:+$(absolutepath "$2")}"
+    scan_depth="${3:-1}"
+    copy_files="${4:-true}"
+    move_files="${5:-false}"
 
     echod "Starting import_ssl with parameters:"
     echod "           import: $import"
@@ -2055,7 +2001,7 @@ import_ssl() {
             if [ "$ftype" = "root" ] || [ "$ftype" = "intermediate" ]; then
                 ca_issuer=$(openssl x509 -in "$ca_cert_file" -noout -issuer | sed 's/issuer=//')
                 ca_cn=$(echo "$ca_issuer" | sed -n 's/.*CN=\([^,]*\).*/\1/p' | sed 's/^ *//;s/ *$//')
-                ca_index="$(echo "$ca_cn" | sed -e 's/\ /\_/' -e 's/\-/\_/' | tr "[:upper:]" "[:lower:]")"
+                ca_index="$(echo "$ca_cn" | sed -e 's/\ /\_/g' -e 's/\-/\_/g' | tr "[:upper:]" "[:lower:]")"
             fi
 
             if [ "$copy_files" = "true" ] || [ "$move_files" = "true" ]; then
@@ -2103,11 +2049,11 @@ import_ssl() {
     echos "Importing files successful. Imported $filecount files."
 }
 
-
-
-check_and_renew_certificate() {
+renew_certificate() {
     echo
 }
+
+
 
 set_as_default_CA() {
     index="$1"
@@ -2119,22 +2065,19 @@ set_as_default_CA() {
     if ! index_exists "$index"; then
         echoe "Index: $index not found in database."
         return 1
-    else
-        jq -r --arg idx "$index" '.ssl.defaultCA = $idx' "$DC_DB" > "${DC_DB}.tmp" || {
-            echoe "Setting $index as defaultCA failed"
-            rm -f "${DC_DB}.tmp"
-            return 1
-        }
-
-        mv "${DC_DB}.tmp" "$DC_DB" || {
-            echoe "Overwriting database with temporary db failed"
-            rm -f "${DC_DB}.tmp"
-            return 1
-        }
-
     fi
+    jq -r --arg idx "$index" '.ssl.defaultCA = $idx' "$DC_DB" > "${DC_DB}.tmp" || {
+        echoe "Setting $index as defaultCA failed"
+        rm -f "${DC_DB}.tmp"
+        return 1
+    }
+
+    mv "${DC_DB}.tmp" "$DC_DB" || {
+        echoe "Overwriting database with temporary db failed"
+        rm -f "${DC_DB}.tmp"
+        return 1
+    }
 
     echos "Setting $index as dcrypto's .ssl.defaultCA succesful"
-    set_permissions_and_owner "$DC_DB" 400
     return 0
 }
