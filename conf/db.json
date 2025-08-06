@@ -1,6 +1,7 @@
 {
   "ssl": {
     "defaultCA": "",
+    "encrypted": [],
     "keys": {},
     "ca": {
       "root": {},
@@ -8,8 +9,9 @@
     }
   },
   "gpg": {
-    "defaultHome": "",
-    "defaultKey": "",
+    "defaultSign": "",
+    "defaultEncrypt": "",
+    "defaultAuth": "",
     "keys": {}
   }
 }
