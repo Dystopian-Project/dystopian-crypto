@@ -4,14 +4,14 @@ install: setup
 
 setup:
 	install -d $(PREFIX)/bin
-	install -m 700 bin/dcrypto $(PREFIX)/bin/dcrypto
+	install -m 750 bin/dcrypto $(PREFIX)/bin/dcrypto
 	install -d -m 755 /etc/dcrypto
 	install -d -m 755 /etc/dcrypto/ca
-	install -d -m 700 /etc/dcrypto/ca/private
+	install -d -m 750 /etc/dcrypto/ca/private
 	install -d -m 755 /etc/dcrypto/cert
-	install -d -m 700 /etc/dcrypto/cert/private
-	install -d -m 700 /etc/dcrypto/old
-	install -d -m 755 /etc/dcrypto/gpg
+	install -d -m 750 /etc/dcrypto/cert/private
+	install -d -m 750 /etc/dcrypto/old
+	install -d -m 700 /etc/dcrypto/gnupg
 	install -d -m 755 /etc/dcrypto/crl
 	install -m 600 conf/db.json /etc/dcrypto/db.json
 	install -d $(PREFIX)/lib/dcrypto
