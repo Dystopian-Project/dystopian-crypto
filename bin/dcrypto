@@ -19,7 +19,7 @@ GPG_LIB_FILE="/usr/local/lib/dcrypto/gpg.sh"
 [ -f "$DB_LIB_FILE" ] || DB_LIB_FILE="$SCRIPT_DIR/../lib/db.sh"
 [ -f "$HELPER_LIB_FILE" ] || HELPER_LIB_FILE="$SCRIPT_DIR/../lib/helper.sh"
 [ -f "$SSL_LIB_FILE" ] || SSL_LIB_FILE="$SCRIPT_DIR/../lib/ssl.sh"
-[ -f "$GPG_LIB_FILE" ] || GPG_LIB_FILE="$SCRIPT_DIR/..lib/gpg.sh"
+[ -f "$GPG_LIB_FILE" ] || GPG_LIB_FILE="$SCRIPT_DIR/../lib/gpg.sh"
 
 
 # Source library files
@@ -35,7 +35,7 @@ GPG_LIB_FILE="/usr/local/lib/dcrypto/gpg.sh"
 [ -f "$GPG_LIB_FILE" ] && . "$GPG_LIB_FILE"
 
 #trap on_error_or_exit && exit 1 INT TERM HUP
-trap on_exit; exit 0 EXIT
+trap on_exit EXIT
 
 
 help() {
@@ -213,10 +213,10 @@ help() {
     echo ""
     echo "OTHER COMMANDS:"
     echo "==============="
-    echo "  --verbose                           Show verbose status informations"
-    echo "  --debug                             Show debug status informations"
-    echo "  --quiet                             No output informations"
+    echo "  -v | --verbose                      Show verbose status informations"
+    echo "  -q | --quiet                        No output informations"
     echo "  --user <name>                       Give group ownership to user"
+    echo "  --debug                             Show debug status informations"
     echo "  version                             Show version information"
     echo "  help                                Show this help message"
     echo ""
@@ -245,6 +245,8 @@ help() {
     echo "  Private keys:            $DC_KEY/"
     echo "  CRL files:               $DC_CRL/"
     echo ""
+    echo "GPG FILES:"
+    echo "  GPG Home Directory:      $DC_GNUPG/"
     echo ""
     echo "DATABASE:"
     echo "  SSL/GnuPG database file: $DC_DB"
@@ -254,7 +256,7 @@ help() {
     echo "  • This script requires root privileges"
     echo "  • SSL private keys use secp384r1 elliptic curve (384-bit)"
     echo "  • SSL Certificates use SHA-384 for signatures"
-    echo "  • Password-protected keys use Argon2id key derivation"
+    echo "  • Password-protected keys use Argon2id key derivation, fallback to pbkdf2"
     echo "  • All operations are logged in the JSON database for tracking"
     echo "  • Use 'show-index --json' to see the complete configuration"
 }
@@ -307,20 +309,24 @@ main() {
                         "$import" "$scan_depth" \
                         "$copy_files" "$move_files"
                     ;;
+
                 kdf)
                     shift
-                    password="" salt=""
+                    password="" salt="" no_argon=0
                     while [ $# -gt 0 ]; do
                         case "$1" in
                             --pass) password="$2"; shift 2;;
                             --salt) salt="$2"; shift 2;;
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
+                            --pbkdf2|--no-argon) no_argon=1;;
+                            -h|--help|-help) shorthelp "ssl $0"; exit 0;;
                             *) echoe "Unknown command: $1"; shorthelp "ssl $0"; exit 1;;
                         esac
                     done
-                    create_argon2id_derived_key_pw "$password" "$salt"
+                    [ "$no_argon" -eq 0 ] && _create_argon2id_derived_key_pw "$password" "$salt"
+                    #[ "$no_argon" -ne 0 ] && _create_pbkdf2_derived_key_pw "$password"
                     ;;
-                create*ca)
+
+                create-ca)
                     shift
                     ca_name="" ca_cert_out="" ca_key_out="" ca_pass=""
                     ca_salt_out="" no_argon="" ca_conf_out="" ca_csr_out=""
@@ -353,8 +359,8 @@ main() {
                             --org|-O) organization="$2"; shift 2;;
                             --orgunit|-OU) orgunit="$2"; shift 2;;
                             --days) days="$2"; shift 2;;
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
-                            *) echoe "Unknown command: $1"; shorthelp "ssl $0"; exit 1;;
+                            -h|--help|-help) shorthelp "ssl create-ca"; exit 0;;
+                            *) echoe "Unknown command: $1"; shorthelp "ssl create-ca"; exit 1;;
                         esac
                     done
                     create_certificate_authority \
@@ -368,7 +374,7 @@ main() {
                         "$set_as_default"
                     ;;
 
-                create*key)
+                create-key)
                     shift
                     key_name="" key_out="" password=""
                     salt_out="" no_argon=""
@@ -379,8 +385,8 @@ main() {
                           --password|--pass) password="$2"; shift 2;;
                           --salt|--salt*out) salt_out="$2"; shift 2;;
                           --noargon|--no*argon|--pbkdf2) no_argon=true; shift;;
-                          -h|--help) shorthelp "ssl $0"; exit 0;;
-                          *) echoe "Unknown command: $1" && shorthelp "ssl $0"; exit 1;;
+                          -h|--help|-help) shorthelp "ssl create-key"; exit 0;;
+                          *) echoe "Unknown command: $1" && shorthelp "ssl create-key"; exit 1;;
                         esac
                     done
                     create_private_key \
@@ -389,7 +395,7 @@ main() {
                         "$no_argon"
                     ;;
 
-                create*csr)
+                create-csr)
                     shift
                     key_name="" key_file="" csr_out="" cfg_out="" domains=""
                     ips="" common_name="" client="true" server="false" password="" salt=""
@@ -414,8 +420,8 @@ main() {
                             --locality|-L) locality="$2"; shift 2;;
                             --org|-O) organization="$2"; shift 2;;
                             --orgunit|-OU|--OU) orgunit="$2"; shift 2;;
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
-                            *) echoe "Unknown command: $1"; shorthelp "ssl $0"; exit 1;;
+                            -h|--help|-help) shorthelp "ssl create-csr"; exit 0;;
+                            *) echoe "Unknown command: $1"; shorthelp "ssl create-csr"; exit 1;;
                         esac
                     done
                     create_certificate_signing_request \
@@ -426,7 +432,7 @@ main() {
                         "$common_name" "$crldist"
                     ;;
 
-                sign*csr|create*cert)
+                sign-csr|create-cert)
                     shift
                     csr_name="" csr_file="" cert_out="" ca_name=""
                     ca_cert_file="" ca_key_file="" ca_pass="" ca_salt=""
@@ -445,8 +451,8 @@ main() {
                             --keep) keep_csr="true"; keep_cfg="true"; shift;;
                             --keep*csr) keep_csr="true"; shift;;
                             --keep*cfg) keep_cfg="true"; shift;;
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
-                            *) echoe "Unknown command: $1"; shorthelp "ssl $0"; exit 1;;
+                            -h|--help|-help) shorthelp "ssl sign-csr"; exit 0;;
+                            *) echoe "Unknown command: $1"; shorthelp "ssl sign-csr"; exit 1;;
                         esac
                     done
                     sign_certificate_request \
@@ -455,7 +461,8 @@ main() {
                         "$ca_pass" "$ca_salt" "$validity_days" \
                         "$keep_csr" "$keep_cfg" "$config_file"
                     ;;
-                set*as*default*CA|set*as*default)
+
+                set-as-default-CA|set-as-default)
                     shift
                     index=""
                     while [ $# -gt 0 ]; do
@@ -465,6 +472,7 @@ main() {
                     done
                     set_as_default_CA "$index"
                     ;;
+
                 verify-cert)
                     shift
                     cert_file="" ca_cert=""
@@ -475,7 +483,7 @@ main() {
                             --ca) ca_cert="$2"; shift 2;;
                             --chain) cert_chain="$2"; shift 2;;
                             --no-check-expiry) check_expiry="false"; shift;;
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
+                            -h|--help|-help) shorthelp "ssl $0"; exit 0;;
                             *) echoe "Unknown command: $1"; shorthelp "ssl $0"; exit 1;;
                         esac
                     done
@@ -490,7 +498,7 @@ main() {
                     while [ $# -gt 0 ]; do
                         case "$1" in
                             --type) ca_list_type="$2"; shift 2;; 
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
+                            -h|--help|-help) shorthelp "ssl $0"; exit 0;;
                             *) echoe "Unknown option for list-ca: $1"; exit 1;;
                         esac
                     done
@@ -507,7 +515,7 @@ main() {
                             --index) ca_show_index="$2"; shift 2;;
                             --type) ca_show_type="$2"; shift 2;;
                             --cert) show_cert_details="true"; shift;;
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
+                            -h|--help|-help) shorthelp "ssl $0"; exit 0;;
                             *) echoe "Unknown option: $1"; shorthelp "ssl $0"; exit 1;;
                         esac
                     done
@@ -525,7 +533,7 @@ main() {
                             --out) output="$2"; shift 2;;
                             --pass) password="$2"; shift 2;;
                             --asymmetric) asymmetric="true"; shift;;
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
+                            -h|--help|-help) shorthelp "ssl $0"; exit 0;;
                             *) echoe "Unknown option for encrypt: $1";  shorthelp "ssl $0"; exit 1;;
                         esac
                     done
@@ -543,7 +551,7 @@ main() {
                             --out) output="$2"; shift 2 ;;
                             --pass) password="$2"; shift 2 ;;
                             --symmetric) asymmetric="true"; shift;;
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
+                            -h|--help|-help) shorthelp "ssl $0"; exit 0;;
                             *) echoe "Unknown option for decrypt: $1"; shorthelp "ssl $0"; exit 1;;
                         esac
                     done
@@ -563,7 +571,7 @@ main() {
                             --out) crl_outfile="$2"; shift 2;;
                             --ca-pass|--pass) ca_pass="$2"; shift 2;;
                             --days) crl_days="$2"; shift 2;;
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
+                            -h|--help|-help) shorthelp "ssl $0"; exit 0;;
                             *) echoe "Unknown option: $1"; shorthelp "ssl $0"; exit 1;;
                         esac
                     done
@@ -584,7 +592,7 @@ main() {
                             --ca-cert) ca_cert_file="$2"; shift 2;;
                             --ca-pass|--pass) ca_pass="$2"; shift 2;;
                             --reason) reason="$2"; shift 2;;
-                            -h|--help) shorthelp "ssl $0"; exit 0;;
+                            -h|--help|-help) shorthelp "ssl $0"; exit 0;;
                             *) echo "Unknown option: $1"; shorthelp "ssl $0"; exit 1;;
                         esac
                     done
@@ -613,8 +621,8 @@ main() {
                             --orgaunit|-OU|--OU) orgunit="$2"; shift 2;;
                             --common-name|-CN|--CN) common_name="$2"; shift 2;;
                             --crldistributionpoint|--crldist) crldist="$2"; shift 2;;
-                            --help|-h) shorthelp "ssl $0"; exit 0;;
-                            *) echo "Unknown option: $1"; shorthelp "ssl $0"; exit 1;;
+                            -help|--help|-h) shorthelp "ssl create-config"; exit 0;;
+                            *) echo "Unknown option: $1"; shorthelp "ssl create-config"; exit 1;;
                         esac
                     done
                     create_sslconfig \
@@ -622,6 +630,21 @@ main() {
                         "$country" "$state" "$locality" \
                         "$org" "$orgunit" "$common_name" \
                         "$crldist" "$cfg_out"
+                    ;;
+
+                set-default-ca|--set-default-ca)
+                    shift
+                    default_ca_index=""
+                    default_ca_type=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --index) default_ca_index="$2"; shift 2;;
+                            --type) default_ca_type="$2"; shift 2;;
+                            -help|--help|-h) shorthelp "$0"; exit 0;;
+                            *) echoe "Unknown option: $1"; shorthelp "$0"; exit 1;;
+                        esac
+                    done
+                    set_default_ca "$default_ca_index" "$default_ca_type"
                     ;;
 
                 install)
@@ -632,13 +655,14 @@ main() {
                         case "$1" in
                             --docker-client-cert) client=true; shift;;
                             --docker-server-cert) server=true; shift;;
-                            --help|-h) shorthelp "ssl $0"; exit 0;;
-                            *) echo "Unknown option: $1"; shorthelp "ssl $0"; exit 1;;
+                            -help|--help|-h) shorthelp "ssl install"; exit 0;;
+                            *) echo "Unknown option: $1"; shorthelp "ssl install"; exit 1;;
                         esac
                     done
                     install_docker_cert "$client" "$server"
                     ;;
-                -h|--help) help; exit 0;;
+
+                -h|--help|-help) help; exit 0;;
                 *) echoe "Unknown SSL command: $1"; help; exit 1;;
             esac
             ;;
@@ -648,110 +672,144 @@ main() {
             case "$1" in
                 import)
                     shift
-                    gpg_key_file=""
-                    gpg_armor="false"
+                    import_path="" index="" scan_depth=""
+                    passphrase="" remove_keys=""
                     while [ $# -gt 0 ]; do
                         case "$1" in
-                            --key) gpg_key_file="$2"; shift 2;;
-                            --armor|-a) gpg_armor="true"; shift;;
-                            -h|--help) shorthelp "gpg $0"; exit 0;;
-                            *) echoe "Unknown option: $1"; shorthelp "gpg $0"; exit 1;;
+                            --file|--dir|-d|-f) import_path="$2"; shift 2;;
+                            --index|-i) index="$2"; shift 2;;
+                            --pass*file|--pass|-p|-pf|--pf) passphrase="$2"; shift 2;;
+                            --scan*depth|-sd|--sd) scan_depth="$2"; shift 2;;
+                            --delete|--del|-del) remove_keys="true"; shift;;
+                            -h|--help|-help) shorthelp "gpg import"; exit 0;;
+                            *) echoe "Unknown option: $1"; shorthelp "gpg import"; exit 1;;
                         esac
                     done
-                    gpg_import_key "$gpg_key_file" "$gpg_armor"
+                    gpg_import_keys \
+                        "$import_path" "$passphrase" \
+                        "$scan_depth" "$index" "$remove_keys"
                     ;;
 
                 export)
                     shift
-                    gpg_export_public=""
-                    gpg_export_private=""
-                    gpg_export_out=""
-                    gpg_export_armor="false"
+                    fingerprint="" name_real="" key_id=""
+                    public_key_out="" private_key_out="" index=""
+                    output_dir="" no_armor="" with_subkeys=""
+                    homedir="" passphrase="" openssl_encrypt="" subkey=""
                     while [ $# -gt 0 ]; do
                         case "$1" in
-                            --public) gpg_export_public="$2"; shift 2;;
-                            --private) gpg_export_private="$2"; shift 2;;
-                            --out) gpg_export_out="$2"; shift 2;;
-                            --armor|-a) gpg_export_armor="true"; shift;;
-                            -h|--help) shorthelp "gpg $0"; exit 0;;
-                            *) echoe "Unknown option: $1"; shorthelp "gpg $0"; exit 1;;
+                            --fingerprint|--fp|-fp) fingerprint="$2"; shift 2;;
+                            --with-subkeys|--subs|--subkeys|--allsubs|--all-subkeys) with_subkeys="true"; shift;;
+                            --name|-n) name_real="$2"; shift 2;;
+                            --key-id|-k|--kid|-kid) key_id="$2"; shift 2;;
+                            --index|-i) index="$2"; shift 2;;
+                            --passphrase|--pass|--pass*file|--pf|-pf) passphrase="$2"; shift 2;;
+                            --public|--pub|-p) public_key_out="$2"; shift 2;;
+                            --homedir|-h|-hd|--hd) homedir="$2"; shift 2;;
+                            --no-openssl-encrypt|--no-ssl-encrypt|--no-encrypt|-ne|--ne|--noenc) openssl_encrypt="false"; shift;;
+                            --private|--priv|--secret|--sec|-s) private_key_out="$2"; shift 2;;
+                            --subkey|--sk|-sk|--sub) subkey="true"; shift;;
+                            --out|--dir|--outdir|--od|-od|-o) output_dir="$2"; shift 2;;
+                            --no-armor|--na|-na|--binary|--bin|-b) no_armor="true"; shift;;
+                            --help|-help) shorthelp "gpg export"; exit 0;;
+                            *) echoe "Unknown option: $1"; shorthelp "gpg export"; exit 1;;
                         esac
                     done
-                    gpg_export_key "$gpg_export_public" "$gpg_export_private" "$gpg_export_out" "$gpg_export_armor"
-                    ;;
-
-                encrypt)
-                    shift
-                    gpg_recipient=""
-                    gpg_encrypt_input=""
-                    gpg_encrypt_output=""
-                    gpg_encrypt_armor="false"
-                    while [ $# -gt 0 ]; do
-                        case "$1" in
-                            --recipient|-r) gpg_recipient="$2"; shift 2;;
-                            --in) gpg_encrypt_input="$2"; shift 2;;
-                            --out) gpg_encrypt_output="$2"; shift 2;;
-                            --armor|-a) gpg_encrypt_armor="true"; shift;;
-                            -h|--help) shorthelp "gpg $0"; exit 0;;
-                            *) echoe "Unknown option: $1"; shorthelp "gpg $0"; exit 1;;
-                        esac
-                    done
-                    gpg_encrypt "$gpg_recipient" "$gpg_encrypt_input" "$gpg_encrypt_output" "$gpg_encrypt_armor"
-                    ;;
-
-                decrypt)
-                    shift
-                    gpg_decrypt_input=""
-                    gpg_decrypt_output=""
-                    gpg_decrypt_pass=""
-                    while [ $# -gt 0 ]; do
-                        case "$1" in
-                            --in) gpg_decrypt_input="$2"; shift 2;;
-                            --out) gpg_decrypt_output="$2"; shift 2;;
-                            --pass) gpg_decrypt_pass="$2"; shift 2;;
-                            -h|--help) shorthelp "gpg $0"; exit 0;;
-                            *) echoe "Unknown option: $1"; shorthelp "gpg $0"; exit 1;;
-                        esac
-                    done
-                    gpg_decrypt "$gpg_decrypt_input" "$gpg_decrypt_output" "$gpg_decrypt_pass"
+                    gpg_export_keypair \
+                        "$fingerprint" "$name_real" \
+                        "$key_id" "$index" "$no_armor" \
+                        "$homedir" "$output_dir" \
+                        "$public_key_out" "$private_key_out" \
+                        "$with_subkeys" "$passphrase" \
+                        "$openssl_encrypt" "$subkey"
                     ;;
 
                 genpair)
                     shift
-                    gpg_gen_name=""
-                    gpg_gen_email=""
-                    gpg_gen_comment=""
-                    gpg_gen_keysize=""
-                    gpg_gen_expire=""
+                    private_key_out="" public_key_out=""
+                    name_real="" name_email="" name_comment=""
+                    expiry_date="" homedir="" sign="" no_subs=""
+                    passphrase="" auth="" encrypt="" index=""
+                    sname_real="" sname_email="" sname_comment=""
+                    spassphrase="" sexpiry_date=""
+                    ename_real="" ename_email="" ename_comment=""
+                    epassphrase="" eexpiry_date=""
+                    aname_real="" aname_email="" aname_comment=""
+                    apassphrase="" aexpiry_date=""
                     while [ $# -gt 0 ]; do
                         case "$1" in
-                            --name) gpg_gen_name="$2"; shift 2;;
-                            --email) gpg_gen_email="$2"; shift 2;;
-                            --comment) gpg_gen_comment="$2"; shift 2;;
-                            --keysize) gpg_gen_keysize="$2"; shift 2;;
-                            --expire) gpg_gen_expire="$2"; shift 2;;
-                            -h|--help) shorthelp "gpg $0"; exit 0;;
+                            --home|--homedir) homedir="$2"; shift 2;;
+                            --name|-n) name_real="$2"; shift 2;;
+                            --email|-e|--mail) name_email="$2"; shift 2;;
+                            --comment|-c) name_comment="$2"; shift 2;;
+                            --ename|-en|--en) ename_real="$2"; shift 2;;
+                            --eemail|-ee|--ee) ename_email="$2"; shift 2;;
+                            --ecomment|-ec|--ec) ename_comment="$2"; shift 2;;
+                            --aname|-an|--an) aname_real="$2"; shift 2;;
+                            --aemail|-ae|--ae|--amail) aname_email="$2"; shift 2;;
+                            --acomment|-ac|--ac) aname_comment="$2"; shift 2;;
+                            --sname|-sn|--sn) sname_real="$2"; shift 2;;
+                            --semail|-se|--se|--smail) sname_email="$2"; shift 2;;
+                            --scomment|-sc|--sc) sname_comment="$2"; shift 2;;
+                            --passphrase|--pass|--pass*file|-p|--pf|-pf) passphrase="$2"; shift 2;;
+                            --spassphrase|--spass|--spass*file|-sp|--spf|-spf) spassphrase="$2"; shift 2;;
+                            --epassphrase|--epass|--epass*file|-ep|--epf|-epf) epassphrase="$2"; shift 2;;
+                            --apassphrase|--apass|--apass*file|-ap|--apf|-apf) apassphrase="$2"; shift 2;;
+                            --encrypt|--enc) encrypt="true"; shift;;
+                            --sign) sign="true"; shift;;
+                            --auth) auth="true"; shift;;
+                            --expire) expiry_date="$2"; shift 2;;
+                            --no-subs) no_subs="true"; shift;;
+                            --index|-i) index="$2"; shift 2;;
+                            -h|--help|-help) echoe "gpg genpair" && shorthelp "gpg genpair"; exit 0;;
+                            *) echoe "Unknown option: $1"; shorthelp "gpg genpair"; exit 1;;
+                        esac
+                    done
+                    gpg_create_keypair \
+                        "$name_real" "$passphrase" \
+                        "$name_email" "$name_comment" \
+                        "$expiry_date" "$homedir" \
+                        "$sign" "$auth" \
+                        "$encrypt" "$index" "$no_subs" \
+                        "$sname_real" "$sname_email" "$sname_comment" \
+                        "$sexpiry_date" "$spassphrase" \
+                        "$ename_real" "$ename_email" "$ename_comment" \
+                        "$eexpiry_date" "$epassphrase" \
+                        "$aname_real" "$aname_email" "$aname_comment" \
+                        "$aexpiry_date" "$apassphrase"
+                    ;;
+
+                verify)
+                    shift
+                    path_to_signature=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --file|-f) path_to_signature="$2"; shift 2;;
+                        esac
+                    done
+                    gpg_verify
+                    ;;
+                sign-pkgbuild)
+                    shift
+                    path_to_file=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --file|-f) path_to_file="$2"; shift 2;;
+                            -h|--help|-help) shorthelp "gpg $0"; exit 0;;
                             *) echoe "Unknown option: $1"; shorthelp "gpg $0"; exit 1;;
                         esac
                     done
-                    gpg_generate_keypair \
-                        "$gpg_gen_name" "$gpg_gen_email" \
-                        "$gpg_gen_comment" "$gpg_gen_keysize" \
-                        "$gpg_gen_expire"
-                    ;;
 
-                -h|--help|*) echoe "Unknown GPG command: $1"; help; exit 1;;
+                    ;;
+                -h|--help|-help|*) echoe "Unknown GPG command: $1"; help; exit 1;;
             esac
             ;;
 
         --cleanup|cleanup)
             shift
-            cleanup_index=""
-            cleanup_non_ca_keys="false"
-            cleanup_orphaned="false"
-            cleanup_backups="false"
-            cleanup_dry_run="false"
-            cleanup_keep_backups="false"
+            cleanup_index="" cleanup_non_ca_keys="false"
+            cleanup_orphaned="false" cleanup_backups="false"
+            cleanup_dry_run="false" cleanup_keep_backups="false"
             while [ $# -gt 0 ]; do
                 case "$1" in
                     --index) cleanup_index="$2"; shift 2;;
@@ -760,7 +818,7 @@ main() {
                     --backups) cleanup_backups="true"; shift;;
                     --dry*run) cleanup_dry_run="true"; shift;;
                     --keep*bkps) cleanup_keep_backups="true"; shift;;
-                    -h|--help) shorthelp "--cleanup"; exit 0;;
+                    -h|--help|-help) shorthelp "--cleanup"; exit 0;;
                     *) echoe "Unknown option: $1"; shorthelp "--cleanup"; exit 1;;
                 esac
             done
@@ -770,7 +828,7 @@ main() {
             ;;
 
         # Maintenance and utility commands
-        show-index)
+        --show-index|show-index)
             shift
             show_keys="false"
             show_ca="false"
@@ -780,7 +838,7 @@ main() {
                     --keys) show_keys="true"; shift;;
                     --ca) show_ca="true"; shift;;
                     --json) json_output="true"; shift;;
-                    --help|-h) shorthelp "ssl $0"; exit 0;;
+                    -help|--help|-h) shorthelp "ssl $0"; exit 0;;
                     *) echo "Unknown option: $1"; shorthelp "ssl $0"; exit 1;;
                 esac
             done
@@ -797,7 +855,7 @@ main() {
                     --out) backup_output="$2"; shift 2;;
                     --compress|-z) backup_compress="true"; shift;;
                     --exclude-keys) backup_exclude_keys="true"; shift;;
-                    --help|-h) shorthelp "$0"; exit 0;;
+                    -help|--help|-h) shorthelp "$0"; exit 0;;
                     *) echoe "Unknown option: $1"; shorthelp "$0"; exit 1;;
                 esac
             done
@@ -812,26 +870,11 @@ main() {
                 case "$1" in
                     --from) restore_from="$2"; shift 2;;
                     --force) restore_force="true"; shift;;
-                    --help|-h) shorthelp "$0"; exit 0;;
+                    -help|--help|-h) shorthelp "$0"; exit 0;;
                     *) echoe "Unknown option: $1"; shorthelp "$0"; exit 1;;
                 esac
             done
             restore_dcrypto "$restore_from" "$restore_force"
-            ;;
-
-        --set-default-ca|set-default-ca)
-            shift
-            default_ca_index=""
-            default_ca_type=""
-            while [ $# -gt 0 ]; do
-                case "$1" in
-                    --index) default_ca_index="$2"; shift 2;;
-                    --type) default_ca_type="$2"; shift 2;;
-                    --help|-h) shorthelp "$0"; exit 0;;
-                    *) echoe "Unknown option: $1"; shorthelp "$0"; exit 1;;
-                esac
-            done
-            set_default_ca "$default_ca_index" "$default_ca_type"
             ;;
 
         --reset-dcrypto|reset-dcrypto)
@@ -840,9 +883,10 @@ main() {
             reset_gpg="false"
             while [ $# -gt 0 ]; do
                 case "$1" in
-                    --ssl) reset_ssl="true"; shift;;
-                    --gpg) reset_gpg="true"; shift;;
-                    --help|-h) shorthelp "$0"; exit 0;;
+                    --all|-a) reset_ssl="true"; reset_gpg="true"; shift;;
+                    --ssl|-s) reset_ssl="true"; shift;;
+                    --gpg|-g) reset_gpg="true"; shift;;
+                    -help|--help|-h) shorthelp "$0"; exit 0;;
                     *) echoe "Unknown option: $1"; shorthelp "$0"; exit 1;;
                 esac
             done
@@ -855,7 +899,7 @@ main() {
             echos "A POSIX shell script for managing SSL certificates and GPG keys"
             ;;
 
-        -h|--help) help; exit 0;;
+        -h|--help|-help) help; exit 0;;
         *) echoe "Unknown command: $1"; help; exit 1;;
     esac
 }
