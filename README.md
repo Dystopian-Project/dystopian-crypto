@@ -68,17 +68,15 @@
 - [ ] symmetric (pbkdf2)
 - [ ] symmetric (argon2id)
 
+### gpg genpair
+- [x] complete
+
 ### gpg import
 - [ ] complete
 
 ### gpg export
 - [ ] complete
 
-### gpg encrypt
-- [ ] complete
-
-### gpg decrypt
-- [ ] complete
 
 ### show-index
 - [x] normal output
