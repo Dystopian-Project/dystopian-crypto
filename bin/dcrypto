@@ -695,7 +695,7 @@ main() {
                     fingerprint="" name_real="" key_id=""
                     public_key_out="" private_key_out="" index=""
                     output_dir="" no_armor="" with_subkeys=""
-                    homedir="" passphrase="" openssl_encrypt="" subkey=""
+                    homedir="" passphrase="" openssl_encrypt=""
                     while [ $# -gt 0 ]; do
                         case "$1" in
                             --fingerprint|--fp|-fp) fingerprint="$2"; shift 2;;
@@ -708,7 +708,6 @@ main() {
                             --homedir|-h|-hd|--hd) homedir="$2"; shift 2;;
                             --no-openssl-encrypt|--no-ssl-encrypt|--no-encrypt|-ne|--ne|--noenc) openssl_encrypt="false"; shift;;
                             --private|--priv|--secret|--sec|-s) private_key_out="$2"; shift 2;;
-                            --subkey|--sk|-sk|--sub) subkey="true"; shift;;
                             --out|--dir|--outdir|--od|-od|-o) output_dir="$2"; shift 2;;
                             --no-armor|--na|-na|--binary|--bin|-b) no_armor="true"; shift;;
                             --help|-help) shorthelp "gpg export"; exit 0;;
@@ -721,7 +720,7 @@ main() {
                         "$homedir" "$output_dir" \
                         "$public_key_out" "$private_key_out" \
                         "$with_subkeys" "$passphrase" \
-                        "$openssl_encrypt" "$subkey"
+                        "$openssl_encrypt"
                     ;;
 
                 genpair)
@@ -804,7 +803,21 @@ main() {
                 -h|--help|-help|*) echoe "Unknown GPG command: $1"; help; exit 1;;
             esac
             ;;
+        ssh)
+            shift
+            case "$1" in
+                tunnel|tun)
+                    shift
+                    lhost="" lport=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            --lhost) lhost="$2"; shift 2;;
+                            --lport) lport="$2"; shift 2;;
+                        esac
+                    done
 
+            esac
+            ;;
         --cleanup|cleanup)
             shift
             cleanup_index="" cleanup_non_ca_keys="false"
