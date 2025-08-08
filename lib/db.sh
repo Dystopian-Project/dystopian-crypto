@@ -257,7 +257,9 @@ index_exists() {
 gpg_index_exists() {
     if jq -e \
           --arg idx "$1" \
-          '.gpg.keys[$idx] // empty' "$DC_DB" >/dev/null 2>&1; then
+          '.gpg.keys[$idx] //
+           .gpg.keys[].subkeys[$idx] //
+            empty' "$DC_DB" >/dev/null 2>&1; then
         return 0
     fi
     return 1
@@ -504,96 +506,133 @@ add_to_gpg_subkeys() {
 }
 
 
-get_value_from_gpg_index() {
-    jq -r \
-        --arg idx "$1" \
-        --arg value "$2" \
-        '.gpg.keys[$idx][$value] //
-        empty' "$DC_DB"
-}
-
-get_keyid_from_key_by_usage() {
-    key_id=$(jq -r \
-                --arg idx "$1" \
-                --arg usage "$2" \
-                '.gpg.keys[$idx].subkeys[] | select(.usage == $usage) | .keyId //
-                 empty' "$DC_DB" 2>/dev/null)
-
-    if [ -z "$key_id" ]; then
-        usage=$(jq -r \
-                   --arg idx "$1" \
-                   --arg usage "$2" \
-                   '.gpg.keys[$idx].usage //
-                    empty' "$DC_DB" 2>/dev/null)
-
-        if echo "$usage" | grep -qE "$2"; then
-            key_id="$(jq -r \
-                         --arg idx "$1" \
-                         --arg usage "$2" \
-                         '.gpg.keys[$idx].keyId //
-                          empty' "$DC_DB" 2>/dev/null
-            )"
-        fi
-    fi
-
-    if [ -z "$key_id" ]; then
-        echoe "Failed getting keyId from $1 by usage: $2"
+get_value_from_sub() {
+    if ! jq -r \
+            --arg idx "$1" \
+            --arg val "$2" \
+            '.gpg.keys[].subkeys |
+             .[$idx][$val] // empty' "$DC_DB"; then
+        echoe "Failed getting value: $2 from subkey index: $1"
         return 1
     fi
-
-    echo "$key_id"
     return 0
 }
 
-get_fingerprint_from_key_by_usage() {
-    fingerprint=$(jq -r \
-                --arg idx "$1" \
-                --arg usage "$2" \
-                '.gpg.keys[$idx].subkeys[] | select(.usage == $usage) | .fingerprint //
-                 empty' "$DC_DB" 2>/dev/null)
 
-    if [ -z "$key_id" ]; then
-        usage=$(jq -r \
-                   --arg idx "$1" \
-                   --arg usage "$2" \
-                   '.gpg.keys[$idx].usage //
-                    empty' "$DC_DB" 2>/dev/null)
-
-        if echo "$usage" | grep -qE "$2"; then
-            fingerprint="$(jq -r \
-                         --arg idx "$1" \
-                         --arg usage "$2" \
-                         '.gpg.keys[$idx].fingerprint //
-                          empty' "$DC_DB" 2>/dev/null
-            )"
-        fi
-    fi
-
-    if [ -z "$key_id" ]; then
-        echoe "Failed getting keyId from $1 by usage: $2"
+get_value_from_primary() {
+    if ! jq -r \
+            --arg idx "$1" \
+            --arg val "$2" \
+            '.gpg.keys[$idx][$val] // empty' \
+            "$DC_DB"; then
+        echoe "Failed getting value: $2 from primary key index: $1"
         return 1
     fi
-
-    echo "$fingerprint"
     return 0
 }
 
-get_index_by_fingerprint() {
-  # try from subkeys
-  idx=$(jq -r --arg fp "$1" '.gpg.keys | to_entries[] | select(.value.subkeys[]?.fingerprint == $fp) | .key //
-               empty' "$DC_DB" 2>/dev/null)
 
-  if [ -z "$idx" ]; then
-      # try from primary key
-      idx=$(jq -r --arg fp "$1" '.gpg.keys | to_entries[] | select(.value.fingerprint == $fp) | .key //
-       empty' "$DC_DB" 2>/dev/null)
-  fi
+get_value() {
+    value=$(get_value_from_sub "$1" "$2")
 
-  if [ -z "$idx" ]; then
-      echoe "Failed fetching index from fingerprint: $1"
-      return 1
-  fi
+    if [ -z "$value" ]; then
+        value=$(get_value_from_primary "$1" "$2")
+    fi
 
-  echo "$idx"
-  return 0
+    # shellcheck disable=SC2181
+    if [ "$?" -ne 0 ] || [ -z "$value" ]; then
+        echoe "Failed fetching from json file"
+        return 1
+    fi
+    echo "$value"
+    return 0
+}
+
+
+get_value_by_key_match_from_sub() {
+    if ! jq -r --arg val "$1" \
+               --arg matchkey "$2" \
+               --arg matchval "$3" \
+               '.gpg.keys[].subkeys[] |
+                select(.[$matchkey] == $matchval) |
+                .[$val] // empty' "$DC_DB"; then
+        echoe "Failed getting value: $1 by key $2 matching $3 from subkey"
+        return 1
+    fi
+    return 0
+}
+
+
+get_value_by_key_match_from_primary() {
+    if ! jq -r --arg val "$1" \
+               --arg matchkey "$2" \
+               --arg matchval "$3" \
+               '.gpg.keys[].subkeys[] |
+                select(.[$matchkey] == $matchval) |
+                .[$val] // empty' "$DC_DB"; then
+        echoe "Failed getting value: $1 by key $2 matching $3 from primary"
+        return 1
+    fi
+    return 0
+}
+
+
+get_value_by_key_match() {
+    value=$(get_value_by_key_match_from_sub "$1" "$2" "$3")
+
+    if [ -z "$value" ]; then
+        value=$(get_value_by_key_match_from_primary "$1" "$2" "$3")
+    fi
+
+    # shellcheck disable=SC2181
+    if [ "$?" -ne 0 ] || [ -z "$val" ]; then
+        echoe "Failed fetching from json file"
+        return 1
+    fi
+
+    echo "$value"
+    return 0
+}
+
+get_index_by_key_match_from_sub() {
+    if ! jq -r \
+            --arg mkey "$1" \
+            --arg mval "$2" \
+            '.gpg.keys[].subkeys | to_entries[] |
+             select(.value[$mkey] == $mval) | .key // empty' "$DC_DB"; then
+        echoe "Failed getting index where sub key: $1 has value: $2"
+        return 1
+    fi
+    return 0
+}
+
+get_index_by_key_match_from_primary() {
+    if ! jq -r \
+            --arg mkey "$1" \
+            --arg mval "$2" \
+            '.gpg.keys | to_entries[] |
+             select(.value[$mkey] == $mval) |
+             .key // empty' "$DC_DB"; then
+        echoe "Failed getting index where primary key: $1 has value: $2"
+        return 1
+    fi
+    return 0
+}
+
+
+get_index_by_key_match() {
+    index=$(get_index_by_key_match_from_sub "$1" "$2")
+
+    if [ -z "$index" ]; then
+        index=$(get_index_by_key_match_from_primary "$1" "$2")
+    fi
+
+    # shellcheck disable=SC2181
+    if [ "$?" -ne 0 ] || [ -z "$index" ]; then
+        echoe "Failed fetching from json file"
+        return 1
+    fi
+
+    echo "$index"
+    return 0
 }
