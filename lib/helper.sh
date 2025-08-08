@@ -1,5 +1,6 @@
 # shellcheck shell=sh
 # shellcheck disable=SC2001
+# shellcheck disable=SC2034
 
 askyesno() {
     default="$2"
@@ -18,7 +19,7 @@ askyesno() {
             ;;
     esac
     while true; do
-        printf "%s" "$question"
+        printf "\033[1m\033[1;33m>\033[0m\033[1m %s\033[0m" "$question"
         read -r yesno
         case "$yesno" in
             y|Y|j|J|yes|Yes|YES) return 0;;
@@ -837,4 +838,39 @@ create_gpg_filename() {
     fi
 
     echo "$index-$(date "+%Y%m%d_%H%M")-$usage-$typestr.$ext"
+}
+
+
+get_name_real_from_uid() {
+    if ! echo "$1" | grep -qE "\(|\)"; then
+        echo "$1" | awk -F' <' '{print $1}'
+    else
+        echo "$1" | awk -F' \\(' '{print $1}'
+    fi
+}
+
+
+get_name_email_from_uid() {
+    echo "$1" | awk -F' <' '{print $2}' | awk -F'>' '{print $1}'
+}
+
+
+get_name_comment_from_uid() {
+    echo "$1" | awk -F' \\(' '{print $2}' | awk -F'\\)' '{print $1}'
+}
+
+gpg_build_cmd() {
+    gpg_cmd="gpg"
+    [ "$2" = "add" ] && [ -n "$5" ] && gpg_cmd="$gpg_cmd --batch"
+    [ -n "$1" ] && gpg_cmd="$gpg_cmd --homedir ${1}"
+    [ "$4" = "false" ] && gpg_cmd="$gpg_cmd --armor"
+    [ -s "$5" ] && gpg_cmd="$gpg_cmd --pinentry-mode loopback --passphrase-file ${5}"
+    { { [ -n "$5" ] && [ ! -f "$5" ]; } || [ -z "$5" ]; } && [ "$2" != "exp" ] && gpg_cmd="$gpg_cmd --pinentry-mode loopback --passphrase-fd 0"
+    [ "$2" = "exp" ] && gpg_cmd="$gpg_cmd --export"
+    [ "$2" = "imp" ] && gpg_cmd="$gpg_cmd --import"
+    [ "$2" = "expsec" ] && gpg_cmd="$gpg_cmd --export-secret-keys"
+    [ "$2" = "expsecsub" ] && gpg_cmd="$gpg_cmd --export-secret-subkeys"
+    [ "$3" = "true" ] && gpg_cmd="$gpg_cmd -a"
+    [ "$2" = "gen" ] && gpg_cmd="$gpg_cmd --quick-gen-key"
+    [ "$2" = "add" ] && gpg_cmd="$gpg_cmd --quick-add-key"
 }
