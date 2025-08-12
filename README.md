@@ -70,16 +70,31 @@
 
 ### gpg genpair
 - [x] complete
-
+- [x] with subkeys
+- [x] with passphrase from gui
+- [x] with passphrase from file
+- [x] with passphrase from arg
+- [x] without passphrase
+- [x] optional with uid, passphrase for each type of subkey
+- 
 ### gpg addsubkey
 - [x] complete
+- [x] with passphrase from gui
+- [x] with passphrase from file
+- [x] with passphrase from arg
+- [x] without passphrase
+- [x] optional with uid
 
 ### gpg import
 - [ ] complete
 
 ### gpg export
 - [x] complete
-
+- [x] with passphrase from gui
+- [x] with passphrase from file
+- [x] with passphrase from arg
+- [x] without passphrase
+- [x] encrypted secret key 
 
 ### show-index
 - [x] normal output
