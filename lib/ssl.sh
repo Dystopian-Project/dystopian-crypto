@@ -1,26 +1,32 @@
 # shellcheck shell=sh
 # shellcheck disable=SC2001
+# shellcheck disable=SC2181
+
 
 _create_argon2id_derived_key_pw() {
 
     # Check the exit status of the pipeline
     if openssl kdf \
         -keylen 32 \
-        -kdfopt pass:"${1:+"$([ -s "$1" ] && cat "$(absolutepath "$1")" || echo "$1")"}" \
-        -kdfopt salt:"${2:+"$([ -s "$2" ] && cat "$(absolutepath "$2")" || echo "$2")"}" \
-        -kdfopt memcost:"131072" \
+        -kdfopt pass:"${1:+"$([ -s "$1" ] && cat -- "$(absolutepath "$1")" || echo "$1")"}" \
+        -kdfopt salt:"${2:+"$([ -s "$2" ] && cat -- "$(absolutepath "$2")" || echo "$2")"}" \
+        -kdfopt memcost:"524288" \
         -kdfopt early_clean:1 \
         -kdfopt lanes:"$(nproc)" ARGON2ID 2>/dev/null | \
         tr -d ':\n '; then
+        if [ -t 1 ]; then
+            printf "\n"
+        fi
         return 0
     else
         echoe "Failed to generate Argon2id key"
         return 1
     fi
+
 }
 
 _create_pbkdf2_derived_key_pw() {
-    printf "%s" "${1:+"$([ -s "$1" ] && cat "$(absolutepath "$1")" || echo "$1")"}"
+    printf "%s" "${1:+"$([ -s "$1" ] && cat -- "$(absolutepath "$1")" || echo "$1")"}"
 }
 
 _create_saltfile() {
@@ -248,10 +254,12 @@ _create_and_verify_key() {
     password="$2"
     salt_out="$3"
     no_argon="$4"
+    passphrasedbg=$({ [ "${2}" = "gui" ] || [ "${2}" = "GUI" ]; } && echo "[GUI]")
+    passphrasedbg=$({ [ -n "${2}" ]  && [ ! -f "${2}" ]; } && echo "[SET]" || echo "${2}")
 
     echod "Starting _create_and_verify_key with parameters:"
     echod "    key_out: $key_out"
-    echod "   password: $([ -n "$password" ] && echo "[SET]")"
+    echod "   password: $passphrasedbg"
     echod "   salt_out: $salt_out"
     echod "   no_argon: $no_argon"
 
@@ -352,12 +360,15 @@ _create_and_verify_csr() {
     password="$3"
     salt="$4"
     config_file="$5"
+    passphrasedbg=$({ [ "${3}" = "gui" ] || [ "${3}" = "GUI" ]; } && echo "[GUI]")
+    passphrasedbg=$({ [ -n "${3}" ]  && [ ! -f "${3}" ]; } && echo "[SET]" || echo "${3}")
+    saltdbg=$({ [ -n "${4}" ]  && [ ! -f "${4}" ]; } && echo "[SET]" || echo "${4}")
 
     echod "Starting _create_and_verify_csr with parameters:"
     echod "     csr_out: $csr_out"
     echod "    key_file: $key_file"
-    echod "    password: $([ -s "$password" ] && echo "[SET]" || echo "[EMPTY]")"
-    echod "        salt: $([ -s "$salt" ] && echo "[SET]" || echo "[EMPTY]")"
+    echod "    password: $passphrasedbg"
+    echod "        salt: $saltdbg"
     echod " config_file: $config_file"
 
     (
@@ -441,6 +452,9 @@ _create_and_verify_cert() {
     salt="$7"
     extensions="$8"
     days="$9"
+    passdbg=$({ [ "${6}" = "gui" ] || [ "${6}" = "GUI" ]; } && echo "[GUI]")
+    passdbg=$({ [ -n "${6}" ]  && [ ! -f "${6}" ]; } && echo "[SET]" || echo "${6}")
+    saltdbg=$({ [ -n "${7}" ]  && [ ! -f "${7}" ]; } && echo "[SET]" || echo "${7}")
 
     echod "Starting _create_and_verify_cert with parameters:"
     echod "      cert_out: $cert_out"
@@ -448,8 +462,8 @@ _create_and_verify_cert() {
     echod "   config_file: $config_file"
     echod "   ca_key_file: $ca_key_file"
     echod "  ca_cert_file: $ca_cert_file"
-    echod "       ca_pass: $([ -n "$pass" ] && echo "[SET]" || echo "[EMPTY]")"
-    echod "       ca_salt: $([ -n "$salt" ] && echo "[SET]" || echo "[EMPTY]")"
+    echod "          pass: $passdbg"
+    echod "          salt: $saltdbg"
     echod "    extensions: $extensions"
     echod "          days: $days"
 
@@ -458,8 +472,7 @@ _create_and_verify_cert() {
         if [ -n "$pass" ]; then
             if [ -f "$salt" ]; then
                 echov "Using Argon2id derived key for signing"
-                echod "Calling _create_argon2id_derived_key_pw pass salt | \ "
-                echod "openssl x509 -req -in $csr_file -CA $ca_cert_file -CAkey $ca_key_file -CAcreateserial -out $cert_out -days $days -sha384 -extensions $extensions -extfile $config_file -passin stdin"
+                echod "_create_argon2id_derived_key_pw \"$passdbg\" \"$saltdbg\" | openssl x509 -req -in $csr_file -CA $ca_cert_file -CAkey $ca_key_file -CAcreateserial -out $cert_out -days $days -sha384 -extensions $extensions -extfile $config_file -passin stdin"
                 if ! _create_argon2id_derived_key_pw "$pass" "$salt" | \
                     openssl x509 \
                     -req \
@@ -479,8 +492,7 @@ _create_and_verify_cert() {
                 echosv "CSR signed successfully with Argon2id"
             else
                 echov "No salt file found, using password directly"
-                echod "Calling _create_pbkdf2_derived_key_pw $pass | \ "
-                echod "openssl x509 -req -in $csr_file -CA $ca_cert_file -CAkey $ca_key_file -CAcreateserial -out $cert_out -days $days -sha384 -extensions $extensions -extfile $config_file -passin stdin"
+                echod "_create_pbkdf2_derived_key_pw \"$passdbg\" | openssl x509 -req -in $csr_file -CA $ca_cert_file -CAkey $ca_key_file -CAcreateserial -out $cert_out -days $days -sha384 -extensions $extensions -extfile $config_file -passin stdin"
                 if ! _create_pbkdf2_derived_key_pw "$pass" | \
                     openssl x509 \
                     -req \
@@ -554,12 +566,15 @@ _create_and_verify_sscert() {
     ca_conf_out="$5"
     no_argon="$6"
     days="$7"
+    passdbg=$({ [ "${3}" = "gui" ] || [ "${3}" = "GUI" ]; } && echo "[GUI]")
+    passdbg=$({ [ -n "${3}" ]  && [ ! -f "${3}" ]; } && echo "[SET]" || echo "${3}")
+    saltdbg=$({ [ -n "${4}" ]  && [ ! -f "${4}" ]; } && echo "[SET]" || echo "${4}")
 
     echod "Starting _create_and_verify_sscert with parameters:"
     echod "   ca_key_out: $ca_key_out"
     echod "  ca_cert_out: $ca_cert_out"
-    echod "      ca_pass: $pass"
-    echod "      ca_salt: $salt"
+    echod "         pass: $passdbg"
+    echod "         salt: $saltdbg"
     echod "  ca_conf_out: $ca_conf_out"
     echod "     no_argon: $no_argon"
     echod "         days: $days"
@@ -950,7 +965,7 @@ create_certificate_authority() {
         # Create self signed cert and key
         echod "Calling _create_and_verify_sscert with: $ca_key_out, $ca_cert_out, ${ca_pass:-"PASSWORD"}, ${ca_salt_out:+"SALT"}, $ca_conf_out, $no_argon, $days"
         if ! _create_and_verify_sscert "$ca_key_out" "$ca_cert_out" "$ca_pass" "$ca_salt_out" "$ca_conf_out" "$no_argon" "$days"; then
-            rm -f "$ca_key_out" "$ca_cert_out"
+            rm -f -- -- "$ca_key_out" "$ca_cert_out"
             echoe "Failed to generate self-signed CA certificate"
             return 1
         fi
@@ -982,7 +997,7 @@ create_certificate_authority() {
         echosv "Creating and verifying CERT successful"
 
         if [ "$keep_ca_csr" != "true" ]; then
-            rm -f "$ca_csr_out"
+            rm -f -- -- "$ca_csr_out"
         fi
 
         # Adding issuer to index dictionary if intermediate
@@ -1036,7 +1051,7 @@ create_certificate_authority() {
             echod "Successfully set as default CA"
         else
             echoe "Warning: Failed to set as default CA"
-            rm -f "${DC_DB}.tmp"
+            rm -f -- "${DC_DB}.tmp"
         fi
         echoi "Set as default CA: $index"
     fi
@@ -1163,7 +1178,7 @@ create_certificate_signing_request() {
     echod "Calling _create_and_verify_csr $csr_out $key_file $password $salt $cfg_out"
     _create_and_verify_csr "$csr_out" "$key_file" "$password" "$salt" "$cfg_out" || {
         echoe "Failed calling _create_and_verify_key"
-        rm -f "$cfg_out" "$csr_out"
+        rm -f -- "$cfg_out" "$csr_out"
         return 1
     }
     echosv "Creating and verifying CSR file succesful"
@@ -1316,10 +1331,10 @@ sign_certificate_request() {
     fi
 
     # Cleanup CSR and config files based on keep flags
-    echoi "Cleaning up temporary files"
+    echov "Cleaning up temporary files"
     if [ "$keep_csr" = "false" ]; then
         file=$(get_value_from_keys_index "$index" "csr")
-        rm -f "$file"
+        rm -f -- "$file"
         if ! delete_key_from_keys_index "$index" "csr"; then
             echoe "Cleaning up after signing failed"
             return 1
@@ -1327,7 +1342,7 @@ sign_certificate_request() {
     fi
     if [ "$keep_cfg" = "false" ]; then
         file=$(get_value_from_keys_index "$index" "cfg")
-        rm -f "$file"
+        rm -f -- "$file"
         if ! delete_key_from_keys_index "$index" "cfg"; then
             echoe "Cleaning up after signing failed"
             return 1
@@ -1537,7 +1552,7 @@ create_certificate_revocation_list() {
 
             if [ ! -f "$salt_file" ]; then
                 echoe "Salt file $salt_file does not exist"
-                rm -f "$config_file"
+                rm -f -- "$config_file"
                 return 1
             fi
 
@@ -1557,7 +1572,7 @@ create_certificate_revocation_list() {
                     -config "$config_file" \
                     -passin "stdin" 2>/dev/null || {
                 echoe "Failed to generate CRL with encrypted key"
-                rm -f "$config_file"
+                rm -f -- "$config_file"
                 return 1
             }
         else
@@ -1568,7 +1583,7 @@ create_certificate_revocation_list() {
                 -out "$crl_outfile" \
                 -config "$config_file" 2>/dev/null || {
                 echoe "Failed to generate CRL"
-                rm -f "$config_file"
+                rm -f -- "$config_file"
                 return 1
             }
         fi
@@ -2068,13 +2083,13 @@ set_as_default_CA() {
     fi
     jq -r --arg idx "$index" '.ssl.defaultCA = $idx' "$DC_DB" > "${DC_DB}.tmp" || {
         echoe "Setting $index as defaultCA failed"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
 
     mv "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Overwriting database with temporary db failed"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
 
