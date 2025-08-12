@@ -1,6 +1,7 @@
 # shellcheck shell=sh
 # shellcheck disable=SC2001
 # shellcheck disable=SC2034
+# shellcheck disable=SC2181
 
 askyesno() {
     default="$2"
@@ -106,7 +107,7 @@ reset_dcrypto() {
             echos "Backup successful @ /etc/dcrypto.bkp"
         fi
         if [ -n "$ssl" ] && [ "$ssl" = "true" ]; then
-            rm -rf "${DC_CA}" "{$DC_CERT}" "${DC_CRL}" 2>/dev/null || {
+            rm -rf -- "${DC_CA}" "{$DC_CERT}" "${DC_CRL}" 2>/dev/null || {
                 echoe "Problem resetting dcrypto ssl"
                 exit 1
             }
@@ -121,7 +122,7 @@ reset_dcrypto() {
             echos "Reset of dcrypto SSL successful"
         fi
         if [ -n "$gpg" ] && [ "$gpg" = "true" ]; then
-            rm -rf "${DC_GNUPG}" 2>/dev/null || {
+            rm -rf -- "${DC_GNUPG}" 2>/dev/null || {
               echoe "Problem resetting dcrypto gpg"
               exit 1
             }
@@ -241,7 +242,7 @@ cleanup_dcrypto_files() {
                 found_orphaned=true
                 echoi "Orphaned import_file: $file_path"
                 if [ "$cleanup_dry_run" != "true" ]; then
-                    rm -f "$file_path" 2>/dev/null || {
+                    rm -f -- "$file_path" 2>/dev/null || {
                         echoe "Failed to remove orphaned import_file: $file_path"
                         continue
                     }
@@ -253,7 +254,7 @@ cleanup_dcrypto_files() {
                 echod "File $file_path is referenced in index, skipping"
             fi
         done
-        rm -f "$tmpfile_orphaned"
+        rm -f -- "$tmpfile_orphaned"
         if [ "$found_orphaned" = "false" ]; then
             echoi "No orphaned files found"
         fi
@@ -280,14 +281,14 @@ cleanup_dcrypto_files() {
                     echo "$backup_files" | head -n "$delete_count" | while IFS= read -r old_backup; do
                         echoi "Backup import_file (index $index): $old_backup"
                         if [ "$cleanup_dry_run" != "true" ]; then
-                            rm -f "$old_backup" 2>/dev/null || {
+                            rm -f -- "$old_backup" 2>/dev/null || {
                                 echoe "Failed to remove backup import_file: $old_backup"
                                 continue
                             }
                             # Remove from index.json
                             bkp_key=$(jq -r --arg idx "$index" --arg path "$old_backup" '.ssl.keys[$idx] | to_entries[] | select(.value == $path) | .key' "$DC_DB")
                             if jq -e "del(.ssl.keys.\"$index\".\"$bkp_key\")" "$DC_DB" > "$DC_DB.tmp"; then
-                                mv "$DC_DB.tmp" "$DC_DB" 2>/dev/null
+                                mv -- "$DC_DB.tmp" "$DC_DB" 2>/dev/null
                                 set_permissions_and_owner "$DC_DB" 600
                             else
                                 echoe "Failed to update index.json for backup import_file: $old_backup"
@@ -304,7 +305,7 @@ cleanup_dcrypto_files() {
             else
                 echoi "Backup import_file (no index): $backup_file_path"
                 if [ "$cleanup_dry_run" != "true" ]; then
-                    rm -f "$backup_file_path" 2>/dev/null || {
+                    rm -f -- "$backup_file_path" 2>/dev/null || {
                         echoe "Failed to remove backup import_file: $backup_file_path"
                         continue
                     }
@@ -314,7 +315,7 @@ cleanup_dcrypto_files() {
                 fi
             fi
         done
-        rm -f "$tmpfile_backups" >/dev/null
+        rm -f -- "$tmpfile_backups" >/dev/null
         if [ "$found_backups" = "false" ]; then
             echoi "No backup files found"
         fi
@@ -341,13 +342,13 @@ cleanup_dcrypto_files() {
             fi
             echoi "Non-CA key import_file: $key_file (index $index)"
             if [ "$cleanup_dry_run" != "true" ]; then
-                rm -f "$key_file" 2>/dev/null || {
+                rm -f -- "$key_file" 2>/dev/null || {
                     echoe "Failed to remove non-CA key import_file: $key_file"
                     continue
                 }
                 # Remove the entire index entry
                 if jq -e "del(.ssl.keys.\"$index\")" "$DC_DB" > "$DC_DB.tmp"; then
-                    mv "$DC_DB.tmp" "$DC_DB" 2>/dev/null
+                    mv -- "$DC_DB.tmp" "$DC_DB" 2>/dev/null
                     set_permissions_and_owner "$DC_DB" 600
                 else
                     echoe "Failed to update index.json for non-CA key: $key_file"
@@ -358,7 +359,7 @@ cleanup_dcrypto_files() {
                 echov "Dry run: Would remove non-CA key import_file: $key_file"
             fi
         done
-        rm -f "$tmpfile_keys" >/dev/null
+        rm -f -- "$tmpfile_keys" >/dev/null
         if [ "$found_keys" = "false" ]; then
             echoi "No non-CA key files found"
         fi
@@ -373,9 +374,6 @@ cleanup_dcrypto_files() {
     fi
     return 0
 }
-
-
-
 
 list_certificate_authorities() {
     ca_list_type="${1:-all}"
@@ -490,8 +488,8 @@ install_docker_cert() {
 
     if [ "$client" = "true" ]; then
         echov "Installing Docker server certificate"
-        home_dir="$(eval echo "~${DC_USER}")"
-        user_dir="$home_dir/.docker"
+        #home_dir="$(eval echo "~${DC_USER}")"
+        user_dir="$homedir/.docker"
 
         if [ ! -d "$user_dir" ]; then
             mkdir -p "$user_dir"
@@ -597,10 +595,10 @@ set_permissions_and_owner() {
 get_dir_from_index() {
     jq -r \
         --arg idx "$1" \
-        '.ssl.keys[idx] | .dir
-        // .ssl.ca.root[$idx] | .dir
-        // .ssl.ca.intermediate[$idx] | .dir
-        // empty' "$DC_DB"
+        '.ssl.keys[idx] | .dir //
+         .ssl.ca.root[$idx] | .dir //
+         .ssl.ca.intermediate[$idx] | .dir //
+         empty' "$DC_DB"
 }
 
 rename_file_if_exists() {
@@ -634,9 +632,9 @@ rename_file_if_exists() {
 
 absolutepath() {
     if which realpath >/dev/null 2>&1; then
-        realpath "$1"
+        realpath -- "$1"
     else
-        dir="$(dirpath "$1")"
+        dir="$(dirpath -- "$1")"
         basename="${1##*/}"
         echo "$dir/$basename"
     fi
@@ -644,7 +642,7 @@ absolutepath() {
 }
 
 absolutepathidx() {
-    dir="$(dirpath "$1")"
+    dir="$(dirpath -- "$1")"
     basename="${1##*/}"
     ext="${basename##*.}"
     base="${basename%*".$ext"}"
@@ -661,31 +659,48 @@ absolutepathidx() {
     echo "$dir/$base.$2.$c.$ext"
 }
 
-
 dirpath() {
-    cwd="$(pwd)"
-    if echo "$1" | grep -qE "^\.\./[a-zA-Z0-9\_]+"; then
-        dir="$cwd"
-        trc="$(echo "$1" | tr '/' '\n' | grep -c "^\.\.$")"
-        while [ ! "$trc" -lt 1 ]; do
-            dir="$(echo "$dir" | sed 's|/[^/]*$||')"
-            trc=$(("$trc" - 1))
-            if [ -z "$dir" ] && [ "$trc" -gt 0 ]; then
-                echoe "Path traversal exceeds root directory."
-                return 1
-            elif [ -z "$dir" ] && [ "$trc" -eq 0 ]; then
-                dir="/"
-                break
+    path="$1"
+    resolved_path=""
+
+    case "$path" in
+        /*)
+            work_path="$path"
+            ;;
+        *)
+            # The check ensures we don't add a trailing slash if pwd is just "/"
+            current_dir=$(pwd)
+            if [ "$current_dir" = "/" ]; then
+                work_path="/$path"
+            else
+                work_path="$current_dir/$path"
             fi
-        done
-    elif echo "$1" | grep -qE "^\./" || echo "$1" | grep -qv "/"; then
-        dir="$cwd"
-    elif echo "$1" | grep -qE "^/"; then
-        dir="$(echo "$1" | sed 's|/[^/]*$||')"
+            ;;
+    esac
+
+    set -f # Temporarily disable globbing to handle components like '*'.
+    IFS='/' # Set the Internal Field Separator to '/' to split the path.
+    for component in $work_path; do
+        case "$component" in
+            "" | ".")
+                continue
+                ;;
+            ..)
+                resolved_path=$(echo "$resolved_path" | sed 's|/[^/]*$||')
+                ;;
+            *)
+                resolved_path="$resolved_path/$component"
+                ;;
+        esac
+    done
+    unset IFS
+    set +f
+
+    if [ -z "$resolved_path" ]; then
+        echo "/"
     else
-        dir="$(echo "$(pwd)/$1" | sed 's|/[^/]*$||')"
+        echo "$resolved_path"
     fi
-    echo "$dir"
     return 0
 }
 
@@ -705,7 +720,7 @@ get_index_from_filename() {
 _cleanup() {
     echod "Cleaning up generated files..."
     for file in $DC_CLEANUP_FILES; do
-        rm -rf "$file"
+        rm -rf -- "$file"
     done
     echod "done."
 }
@@ -720,33 +735,11 @@ set_perms_trap() {
 }
 
 
-on_error() {
-    echoe "Error on line $LINENO"
-    set_perms_trap
-    _cleanup
-}
-
-
 on_exit() {
     set_perms_trap
     _cleanup
 }
 
-
-add_to_cleanup() {
-    for file in "$@"; do
-        DC_CLEANUP_FILES="${DC_CLEANUP_FILES} $file"
-        echod "Sent $file to cleanup queue $DC_CLEANUP_FILES"
-    done
-}
-
-
-add_to_perms() {
-    for file in "$@"; do
-        DC_PERM_FILES="${DC_PERM_FILES} $file"
-        echod "Sent $file to perms queue $DC_PERM_FILES"
-    done
-}
 
 #
 ## GPG FUNCTIONS
@@ -816,7 +809,6 @@ get_subkey_ids_from_gpg() {
 
 create_gpg_filename() {
     index="$1"
-
     usage="$2"
     armor="${3:-false}"
     typestr="${4:-}"
@@ -859,10 +851,11 @@ get_name_comment_from_uid() {
     echo "$1" | awk -F' \\(' '{print $2}' | awk -F'\\)' '{print $1}'
 }
 
+
 gpg_build_cmd() {
     gpg_cmd="gpg"
-    [ "$2" = "add" ] && [ -n "$5" ] && gpg_cmd="$gpg_cmd --batch"
     [ -n "$1" ] && gpg_cmd="$gpg_cmd --homedir ${1}"
+    { [ "$2" = "add" ] || [ "$2" = "gen" ]; } && [ -n "$5" ] && gpg_cmd="$gpg_cmd --batch"
     [ "$4" = "false" ] && gpg_cmd="$gpg_cmd --armor"
     [ -s "$5" ] && gpg_cmd="$gpg_cmd --pinentry-mode loopback --passphrase-file ${5}"
     { { [ -n "$5" ] && [ ! -f "$5" ]; } || [ -z "$5" ]; } && [ "$2" != "exp" ] && gpg_cmd="$gpg_cmd --pinentry-mode loopback --passphrase-fd 0"
@@ -873,4 +866,86 @@ gpg_build_cmd() {
     [ "$3" = "true" ] && gpg_cmd="$gpg_cmd -a"
     [ "$2" = "gen" ] && gpg_cmd="$gpg_cmd --quick-gen-key"
     [ "$2" = "add" ] && gpg_cmd="$gpg_cmd --quick-add-key"
+}
+
+
+ssl_build_cmd() {
+    ssl_cmd="openssl aes-256-cbc"
+    [ "${2##*.}" = "enc" ] && ssl_cmd="$ssl_cmd -d" || ssl_cmd="$ssl_cmd -e"
+    [ "${3:-true}" = "true" ] && ssl_cmd="$ssl_cmd -pbkdf2"
+    [ -s "$1" ] && ssl_cmd="$ssl_cmd -pass file:$1" || ssl_cmd="$ssl_cmd -pass pass:$1"
+    [ "${2##*.}" = "enc" ] && ssl_cmd="$ssl_cmd -in $2" || ssl_cmd="$ssl_cmd -out ${2}.enc"
+}
+
+
+check_gpg_key_integrity() {
+    mkdir -p -- "$DC_FAKE_GNUPG" || {
+        echoe "Not able to create directory for key integrity check."
+        return 1
+    }
+
+    touch -- "$DC_FAKE_GNUPG/pubring.kbx" || {
+        echoe "Not able to create pubring.kbx for key integrity check."
+        return 1
+    }
+
+    if grep -qE "BEGIN PGP (PUBLIC|PRIVATE) KEY BLOCK" -- "$1"; then
+        gpg --batch --homedir "$DC_FAKE_GNUPG" --import "$1"
+    elif file -- "$1" | grep -q "openssl enc"; then
+        ssl_build_cmd "$2" "$1"
+        $ssl_cmd | gpg --batch --homedir "$DC_FAKE_GNUPG" --import "$1"
+    else
+        echoe "Key is not a GPG key"
+    fi
+
+    if [ "$?" -ne 0 ]; then
+        echoe "Key integrity check failed"
+        rm -rf -- "$DC_FAKE_GNUPG"
+        return 1
+    fi
+
+    rm -rf -- "$DC_FAKE_GNUPG"
+    return 0
+}
+
+encrypt_gpg_key() {
+    salt=$(openssl rand -hex 16)
+    iv=$(openssl rand -hex 16)
+    {
+        echo "$iv"
+        openssl enc -e \
+                -aes-256-cbc \
+                -iv "$iv" \
+                -K "$(_create_argon2id_derived_key_pw "$2" "$salt")"
+    } > "${1}.enc"
+
+    if [ ! -s "${1}.enc" ]; then
+        echoe "Failed creating file with encrypted gpg key."
+        return 1
+    fi
+
+    set_permissions_and_owner "${1}.enc" 440
+    add_to_gpg_key "$(basename -- "${1%%.*}")" "salt" "$salt"
+    return 0
+}
+
+decrypt_gpg_key() {
+    index="$(basename -- "${1%%.*}")"
+    salt="$(get_value "$index" "salt")"
+
+    # Read the IV from the second line of the file.
+    iv=$(sed -n '1p' "$1")
+     if [ -z "$iv" ]; then
+        echoe "Could not read IV from file: $1"
+        return 1
+    fi
+
+
+    tail -n +2 -- "$1" | \
+    openssl enc -aes-256-cbc -d \
+                -K "$(_create_argon2id_derived_key_pw "$2" "$salt")" \
+                -iv "$iv)"
+
+    jq -r --arg idx "$index" 'del(.gpg.keys[$idx].salt)' "$DC_DB"
+
 }
