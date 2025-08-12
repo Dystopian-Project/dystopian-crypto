@@ -69,9 +69,9 @@ reset_ssl_index() {
             intermediate: {}
         }
     }' "$DC_DB" > "${DC_DB}.tmp"; then
-        mv "${DC_DB}.tmp" "$DC_DB" || {
+        mv -- "${DC_DB}.tmp" "$DC_DB" || {
             echoe "Failed to reset SSL index"
-            rm -f "${DC_DB}.tmp" >/dev/null
+            rm -f -- "${DC_DB}.tmp" >/dev/null
             return 1
         }
     fi
@@ -87,9 +87,9 @@ reset_gpg_index() {
         defaultEncrypt: "",
         keys: {}
     }' "$DC_DB" > "${DC_DB}.tmp"; then
-        mv "${DC_DB}.tmp" "$DC_DB" || {
+        mv -- "${DC_DB}.tmp" "$DC_DB" || {
             echoe "Failed to reset GPG index"
-            rm -f "${DC_DB}.tmp" >/dev/null
+            rm -f -- "${DC_DB}.tmp" >/dev/null
             return 1
         }
     fi
@@ -103,24 +103,24 @@ delete_key_from_keys_index() {
 
     if [ "$file_delete" = "true" ]; then
         file="$(jq -r --arg idx "$index" --arg key "$key" '.ssl.keys[$idx][$key] // empty' "$DC_DB")"
-        rm -f "$file"
+        rm -f -- "$file"
     fi
 
     jq -r --arg idx "$index" --arg key "$key" 'del(.ssl.keys[$idx][$key])' "$DC_DB" > "${DC_DB}.tmp" || {
         echoe "Failed calling jq --arg idx $index --arg key $key 'del(.ssl.ca[idx][key])' $DC_DB > ${DC_DB}.tmp"
-        rm -f "$DC_DB.tmp"
+        rm -f -- "$DC_DB.tmp"
         return 1
     }
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed moving $DC_DB"
-        rm -f "$DC_DB.tmp"
+        rm -f -- "$DC_DB.tmp"
         return 1
     }
 
-    rm -f "${DC_DB}.tmp" || {
+    rm -f -- "${DC_DB}.tmp" || {
         echoe "Removing $DC_DB.tmp failed"
-        rm -f "$DC_DB.tmp"
+        rm -f -- "$DC_DB.tmp"
         return 1
     }
 
@@ -134,18 +134,18 @@ delete_key_from_ca_index() {
 
     if [ "$file_delete" = "true" ]; then
         file="$(jq -r --arg idx "$index" --arg key "$key" '.ssl.ca.intermediate[$idx][$key] // .ssl.ca.root[$idx][$key] // empty' "$DC_DB")"
-        rm -f "$file"
+        rm -f -- "$file"
     fi
 
     jq -r --arg idx "$index" --arg key "$key" 'del(.ssl.ca.root[$idx][$key]) // del(.ssl.ca.intermediate[$idx][$key])' "$DC_DB" > "${DC_DB}.tmp" || {
         echoe "Failed calling jq --arg idx $index --arg key $key 'del(.ssl.ca[idx][key])' $DC_DB > ${DC_DB}.tmp"
-        rm -f "$DC_DB.tmp"
+        rm -f -- "$DC_DB.tmp"
         return 1
     }
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed moving $DC_DB"
-        rm -f "$DC_DB.tmp"
+        rm -f -- "$DC_DB.tmp"
         return 1
     }
 
@@ -156,13 +156,13 @@ cleanup_index() {
     index="$1"
     jq --arg idx "$index" 'del(.ssl.keys[$idx])' "$DC_DB" > "${DC_DB}.tmp" || {
         echoe "Failed deleting contents of ssl: keys: $index"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed to move temporary database file to $DC_DB"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
 
@@ -188,7 +188,7 @@ backup_and_rename() {
     backup_file="${outfile%.*}.${n}.${outfile##*.}"
 
     # Move the existing import_file to backup location
-    mv "$outfile" "$backup_file" || {
+    mv -- "$outfile" "$backup_file" || {
         echoe "Failed to backup $file_type import_file to $backup_file"
         return 1
     }
@@ -203,13 +203,13 @@ backup_and_rename() {
        del(.ssl.keys[$idx][$file_type])' \
       "$DC_DB" > "${DC_DB}.tmp"; then
         echoe "Failed to update index with backup entry"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     fi
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed to move temporary database file to $DC_DB"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
 
@@ -220,13 +220,13 @@ backup_and_rename() {
       '.ssl.keys[$idx][$backup_key] = $backup_path' \
       "$DC_DB" > "${DC_DB}.tmp"; then
         echoe "Failed to update backup path in index"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     fi
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed to move temporary database file to $DC_DB"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
     return 0
@@ -309,13 +309,13 @@ add_to_ssl_keys_database() {
       '.ssl.keys[$idx][$key] = $value' \
       "$DC_DB" > "${DC_DB}.tmp"; then
         echoe "Failed to add $2 to index"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     fi
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed to move temporary database file to $DC_DB"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
     echod "Updating ssl keys database successful for ssl: keys: $1: $2 = $3"
@@ -335,39 +335,95 @@ add_to_ca_database() {
             '.ssl.ca[$type][$idx][$key] = $val' \
             "$DC_DB" > "${DC_DB}.tmp"; then
         echoe "Failed to update CA database for ssl: $storage_type: $index: $key"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     fi
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed to move temporary database file to $DC_DB"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
     echod "Updating ssl CA database successful for ssl: $storage_type: $index: $key = $value"
     return 0
 }
 
-
-add_to_gpg_database() {
+add_gpg_key() {
     if ! jq --arg idx "$1" \
-            --arg key "$2" \
-            --arg val "$3" \
-            '.gpg.keys[$idx][$key] = $val' \
+        '.gpg.keys[$idx] = {}' \
+        "$DC_DB" > "${DC_DB}.tmp"; then
+            echoe "Failed to update GPG database for gpg: $1: $2 : $3"
+            rm -f -- "${DC_DB}.tmp"
+            return 1
+    fi
+
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
+        echoe "Failed to move temporary database file to $DC_DB"
+        rm -f -- "${DC_DB}.tmp"
+        return 1
+    }
+    echod "Updating GPG database successful for gpg: keys: $1 = {}"
+    return 0
+}
+
+add_gpg_sub() {
+    if ! jq --arg idx "$1" \
+            --arg sub "$2" \
+            '.gpg.keys[$idx].subkeys[$sub] = {}' \
             "$DC_DB" > "${DC_DB}.tmp"; then
         echoe "Failed to update GPG database for gpg: $1: $2 : $3"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     fi
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed to move temporary database file to $DC_DB"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
-    echod "Updating GPG database successful for gpg: keys: $1: $2 = $3"
+    echod "Updating GPG database successful for gpg: keys: $1: subkeys: $2 = {}"
     return 0
 }
+
+
+add_to_gpg_key() {
+    if [ $# -eq 4 ]; then
+        if ! jq -r \
+                --arg idx "$1" \
+                --arg sidx "$2" \
+                --arg key "$3" \
+                --arg val "$4" \
+                '.gpg.keys[$idx].subkeys[$sidx][$key] = $val' \
+                "$DC_DB" > "${DC_DB}.tmp"; then
+            echoe "Something went wrong while adding subkeys"
+            rm -f -- "${DC_DB}.tmp"
+            return 1
+        fi
+    elif [ $# -eq 3 ]; then
+        if ! jq -r --arg idx "$1" \
+                    --arg key "$2" \
+                    --arg val "$3" \
+                    '.gpg.keys[$idx][$key] = $val' \
+                    "$DC_DB" > "${DC_DB}.tmp"; then
+                echoe "Failed to update GPG database for gpg: $1: $2 : $3"
+                rm -f -- "${DC_DB}.tmp"
+                return 1
+        fi
+    fi
+
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
+        echoe "Failed to move temporary database file to $DC_DB"
+        rm -f -- "${DC_DB}.tmp"
+        return 1
+    }
+    if [ $# -eq 3 ]; then
+        echod "Updating GPG database successful for gpg: keys: $1: $2 = $3"
+    elif [ $# -eq 4 ]; then
+        echod "Updating GPG database successful for gpg: keys: $1: subkeys: $2: $3 = $4"
+    fi
+    return 0
+}
+
 
 
 find_index_by_key_value() {
@@ -388,7 +444,8 @@ find_gpg_index_by_key_value() {
     if ! jq -r \
             --arg key "$1" \
             --arg value "$2" \
-            '.gpg.keys | to_entries[] | select(.value[$key] == $value) | .key // empty' "$DC_DB"; then
+            '.gpg.keys | to_entries[] | select(.value[$key] == $value) | .key //
+             empty' "$DC_DB"; then
         return 1
     fi
     return 0
@@ -399,8 +456,8 @@ find_keys_index_by_key_value() {
     if ! jq -r \
             --arg key "$1" \
             --arg value "$2" \
-            '.ssl.keys | to_entries[] | select(.value[$key] == $value) | .key
-            // empty' "$DC_DB"; then
+            '.ssl.keys | to_entries[] | select(.value[$key] == $value) | .key //
+             empty' "$DC_DB"; then
         return 1
     fi
     return 0
@@ -429,13 +486,13 @@ cleanup_ca_index() {
             'del(.ssl.ca[$type][$idx])' \
             "$DC_DB" > "${DC_DB}.tmp"; then
         echoe "Failed to cleanup .ssl.ca.$ca_type.$ca_index"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     fi
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed to move temporary database file to $DC_DB"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
 
@@ -446,13 +503,13 @@ cleanup_ca_index() {
 cleanup_gpg_index() {
     if ! jq -e --arg idx "$1" 'del(.gpg.keys[$idx])' "$DC_DB" > "${DC_DB}.tmp"; then
         echoe "Failed to cleanup .gpg.keys.$1"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     fi
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Failed to move temporary database file to $DC_DB"
-        rm -f "${DC_DB}.tmp"
+        rm -f -- "${DC_DB}.tmp"
         return 1
     }
     return 0
@@ -465,7 +522,7 @@ add_to_encrypted_db() {
         return 1
     fi
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Not able to save temporary db as database file."
         return 1
     }
@@ -480,7 +537,7 @@ remove_from_encrypted_db_by_path() {
         return 1
     fi
 
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Not able to save temporary db as database file."
         return 1
     }
@@ -497,7 +554,7 @@ add_to_gpg_subkeys() {
         '.gpg.keys[$idx].subkeys[$subidx][$key] = $value' "$DC_DB" > "${DC_DB}.tmp"; then
         echoe "Something went wrong while adding subkeys"
     fi
-    mv "${DC_DB}.tmp" "$DC_DB" || {
+    mv -- "${DC_DB}.tmp" "$DC_DB" || {
         echoe "Not able to save temporary db as database file."
         return 1
     }
@@ -532,7 +589,7 @@ get_value_from_primary() {
 }
 
 
-get_value() {
+get_gpg_value() {
     value=$(get_value_from_sub "$1" "$2")
 
     if [ -z "$value" ]; then
@@ -548,6 +605,30 @@ get_value() {
     return 0
 }
 
+delete_gpg_key_and_value_from_sub() {
+    index="$1"
+    key="$2"
+
+    if ! jq -r --arg idx "$1" \
+               --arg key "$2" \
+               '.gpg.keys[].subkeys' "$DC_DB"; then
+        echoe
+    fi
+
+
+}
+
+
+delete_gpg_key_and_value_from_primary() {
+    index="$1"
+    key="$2"
+}
+
+
+delete_gpg_key_and_value() {
+    index="$1"
+    key="$2"
+}
 
 get_value_by_key_match_from_sub() {
     if ! jq -r --arg val "$1" \
