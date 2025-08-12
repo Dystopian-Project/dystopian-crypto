@@ -777,7 +777,7 @@ main() {
                         "$aname_real" "$aname_email" "$aname_comment" \
                         "$aexpiry_date" "$apassphrase"
                     ;;
-                add-key|addkey|add-sub|addsub)
+                add-key|addkey|add-sub|addsub|addsubkey)
                     shift
                     homedir="" name_real="" name_email=""
                     name_comment="" uid="" fingerprint="" key_id=""

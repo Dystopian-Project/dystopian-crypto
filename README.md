@@ -71,11 +71,14 @@
 ### gpg genpair
 - [x] complete
 
+### gpg addsubkey
+- [x] complete
+
 ### gpg import
 - [ ] complete
 
 ### gpg export
-- [ ] complete
+- [x] complete
 
 
 ### show-index
