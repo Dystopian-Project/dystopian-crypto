@@ -2,7 +2,6 @@
 # shellcheck shell=sh
 # shellcheck disable=SC2001
 
-
 if [ "$(id -u)" -ne 0 ]; then
     echo "User must be root"
     exit 1
@@ -14,13 +13,15 @@ DB_LIB_FILE="/usr/local/lib/dcrypto/db.sh"
 HELPER_LIB_FILE="/usr/local/lib/dcrypto/helper.sh"
 SSL_LIB_FILE="/usr/local/lib/dcrypto/ssl.sh"
 GPG_LIB_FILE="/usr/local/lib/dcrypto/gpg.sh"
+SECBOOT_LIB_FILE="/usr/local/lib/dcrypto/secboot.sh"
+
 
 [ -f "$VAR_LIB_FILE" ] || VAR_LIB_FILE="$SCRIPT_DIR/../lib/variables.sh"
 [ -f "$DB_LIB_FILE" ] || DB_LIB_FILE="$SCRIPT_DIR/../lib/db.sh"
 [ -f "$HELPER_LIB_FILE" ] || HELPER_LIB_FILE="$SCRIPT_DIR/../lib/helper.sh"
 [ -f "$SSL_LIB_FILE" ] || SSL_LIB_FILE="$SCRIPT_DIR/../lib/ssl.sh"
 [ -f "$GPG_LIB_FILE" ] || GPG_LIB_FILE="$SCRIPT_DIR/../lib/gpg.sh"
-
+[ -f "$SECBOOT_LIB_FILE" ] || SECBOOT_LIB_FILE="$SCRIPT_DIR/../lib/secboot.sh"
 
 # Source library files
 # shellcheck source=../lib/variables.sh
@@ -33,7 +34,8 @@ GPG_LIB_FILE="/usr/local/lib/dcrypto/gpg.sh"
 [ -f "$SSL_LIB_FILE" ] && . "$SSL_LIB_FILE"
 # shellcheck source=../lib/gpg.sh
 [ -f "$GPG_LIB_FILE" ] && . "$GPG_LIB_FILE"
-
+#shellcheck source=../lib/secboot.sh
+[ -f "$SECBOOT_LIB_FILE" ] && . "$SECBOOT_LIB_FILE"
 #trap on_error_or_exit && exit 1 INT TERM HUP
 trap on_exit EXIT
 
@@ -159,23 +161,23 @@ help() {
     echo "    --out <file>                        (Required) Output file"
     echo "    --armor                             (Optional) Export in ASCII armor format"
     echo ""
-    echo "  gpg encrypt                         Encrypt data with GPG"
-    echo "    --recipient <keyid>                 (Required) Recipient key ID or email"
-    echo "    --in <file>                         (Required) Input file to encrypt"
-    echo "    --out <file>                        (Required) Output encrypted file"
-    echo "    --armor                             (Optional) ASCII armor output"
-    echo ""
-    echo "  gpg decrypt                         Decrypt GPG encrypted data"
-    echo "    --in <file>                         (Required) Input encrypted file"
-    echo "    --out <file>                        (Required) Output decrypted file"
-    echo "    --pass <file|string>                (Optional) Private key passphrase"
-    echo ""
     echo "  gpg genpair                         Generate GPG key pair"
     echo "    --name <name>                       (Required) Real name for key"
     echo "    --email <email>                     (Required) Email address for key"
     echo "    --comment <comment>                 (Optional) Comment for key"
     echo "    --keysize <bits>                    (Optional) Key size in bits (default: 4096)"
     echo "    --expire <date>                     (Optional) Expiration date (0 = never)"
+    echo ""
+    echo "  gpg addsub                          Add subkey to Primary Key"
+
+    echo ""
+    echo ""
+    echo "SECUREBOOT COMMANDS:"
+    echo "============="
+    echo ""
+    echo "  secboot init                        Initialize secureboot keys (either active ones, or creates new ones)"
+    echo ""
+    echo "  secboot verify                      Verify all Kernel Images in /boot/efi/EFI/Linux are signed"
     echo ""
     echo ""
     echo "MAINTENANCE COMMANDS:"
@@ -673,13 +675,14 @@ main() {
                 import)
                     shift
                     import_path="" index="" scan_depth=""
-                    passphrase="" remove_keys=""
+                    passphrase="" remove_keys="" homedir=""
                     while [ $# -gt 0 ]; do
                         case "$1" in
                             --file|--dir|-d|-f) import_path="$2"; shift 2;;
                             --index|-i) index="$2"; shift 2;;
                             --pass*file|--pass|-p|-pf|--pf) passphrase="$2"; shift 2;;
                             --scan*depth|-sd|--sd) scan_depth="$2"; shift 2;;
+                            --homedir|--home) homedir="$2"; shift 2;;
                             --delete|--del|-del) remove_keys="true"; shift;;
                             -h|--help|-help) shorthelp "gpg import"; exit 0;;
                             *) echoe "Unknown option: $1"; shorthelp "gpg import"; exit 1;;
@@ -687,7 +690,8 @@ main() {
                     done
                     gpg_import_keys \
                         "$import_path" "$passphrase" \
-                        "$scan_depth" "$index" "$remove_keys"
+                        "$scan_depth" "$index" \
+                        "$remove_keys" "$homedir"
                     ;;
 
                 export)
@@ -765,24 +769,22 @@ main() {
                         esac
                     done
                     gpg_create_keypair \
-                        "$name_real" "$passphrase" \
-                        "$name_email" "$name_comment" \
-                        "$expiry_date" "$homedir" \
-                        "$sign" "$auth" \
-                        "$encrypt" "$index" "$no_subs" \
-                        "$sname_real" "$sname_email" "$sname_comment" \
-                        "$sexpiry_date" "$spassphrase" \
+                        "$name_real" "$passphrase" "$name_email" \
+                        "$name_comment" "$expiry_date" "$homedir" \
+                        "$sign" "$auth" "$encrypt" \
+                        "$index" "$no_subs" "$sname_real" "$sname_email" \
+                        "$sname_comment" "$sexpiry_date" "$spassphrase" \
                         "$ename_real" "$ename_email" "$ename_comment" \
-                        "$eexpiry_date" "$epassphrase" \
-                        "$aname_real" "$aname_email" "$aname_comment" \
-                        "$aexpiry_date" "$apassphrase"
+                        "$eexpiry_date" "$epassphrase" "$aname_real" \
+                        "$aname_email" "$aname_comment" "$aexpiry_date" \
+                        "$apassphrase"
                     ;;
                 add-key|addkey|add-sub|addsub|addsubkey)
                     shift
                     homedir="" name_real="" name_email=""
                     name_comment="" uid="" fingerprint="" key_id=""
                     passphrase="" encrypt="false" sign="false" auth="false"
-                    expires=""
+                    expires="" sub_passphrase=""
                     while [ $# -gt 0 ]; do
                         case "$1" in
                             --index|-i|--idx|-idx) index="$2"; shift 2;;
@@ -794,6 +796,7 @@ main() {
                             --fingerprint|--fp|-fp) fingerprint="$2"; shift 2;;
                             --key-id|--keyid|--kid|-kid) key_id="$2"; shift 2;;
                             --passphrase|--pass|--pass*file|-p|--pf|-pf) passphrase="$2"; shift 2;;
+                            --subpassphrase|--subpass|--subpass*file|-sp|--spf|-spf) sub_passphrase="$2"; shift 2;;
                             --encrypt|--enc) encrypt="true"; shift;;
                             --sign) sign="true"; shift;;
                             --auth) auth="true"; shift;;
@@ -809,18 +812,9 @@ main() {
                         "$key_id" "$passphrase" \
                         "$encrypt" "$sign" \
                         "$auth" "$index" \
-                        "$expires"
+                        "$expires" "$sub_passphrase"
                     ;;
-                verify)
-                    shift
-                    path_to_signature=""
-                    while [ $# -gt 0 ]; do
-                        case "$1" in
-                            --file|-f) path_to_signature="$2"; shift 2;;
-                        esac
-                    done
-                    gpg_verify
-                    ;;
+
                 sign-pkgbuild)
                     shift
                     path_to_file=""
@@ -836,6 +830,52 @@ main() {
                 -h|--help|-help|*) echoe "Unknown GPG command: $1"; help; exit 1;;
             esac
             ;;
+        secboot|secureboot|secure-boot|sec-boot|sb|sboot)
+            shift
+            case "$1" in
+                init)
+                    shift
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            -h|--help|-help) shorthelp "secboot init"; exit 0;;
+                            *) echoe "Unknown option: $1"; shorthelp "secboot init"; exit 1;;
+                        esac
+                    done
+                    secureboot_init "$"
+                    ;;
+                verify)
+                    shift
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            -h|--help|-help) shorthelp "secboot verify"; exit 0;;
+                            *) echoe "Unknown option: $1"; shorthelp "secboot verify"; exit 1;;
+                        esac
+                    done
+                    secureboot_verify "$"
+                    ;;
+                create-keys|create)
+                    shift
+                    create=""
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            -h|--help|-help) shorthelp "secboot create"; exit 0;;
+                            *) echoe "Unknown option: $1"; shorthelp "secboot create"; exit 1;;
+                        esac
+                    done
+                    ;;
+                load-keys|load)
+                    shift
+                    while [ $# -gt 0 ]; do
+                        case "$1" in
+                            -h|--help|-help) shorthelp "secboot load"; exit 0;;
+                            *) echoe "Unknown option: $1"; shorthelp "secboot load"; exit 1;;
+                        esac
+                    done
+                    ;;
+                -h|--help|-help|*) echoe "Unknown ISO command: $1"; help; exit 1;;
+            esac
+            secboot
+            ;;
         ssh)
             shift
             case "$1" in
@@ -848,7 +888,8 @@ main() {
                             --lport) lport="$2"; shift 2;;
                         esac
                     done
-
+                    ;;
+                -h|--help|-help|*) echoe "Unknown SSH command: $1"; help; exit 1;;
             esac
             ;;
         --cleanup|cleanup)
