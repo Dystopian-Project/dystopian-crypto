@@ -7,8 +7,8 @@
 _gpg_export_public() {
     fingerprint="$1"
     key_id=${fingerprint:24}
-    out_path="$2"
-    no_armor="$3"
+    out_path="${2}"
+    no_armor="${3:-false}"
     homedir="${4:-$DC_GNUPG}"
     with_subs="$5"
 
@@ -23,8 +23,8 @@ _gpg_export_public() {
     echod "Building gpg command..."
     gpg_build_cmd "$homedir" "exp" "$with_subs" "$no_armor"
 
-    echod "Calling $gpg_cmd \"$fingerprint\" > \"$out_path\""
-    if ! $gpg_cmd "$fingerprint" > "$out_path"; then
+    echod "Calling $GPG_CMD \"$fingerprint\" > \"$out_path\""
+    if ! $GPG_CMD "$fingerprint" > "$out_path"; then
         echoe "Failed exporting all subkeys with primary"
         return 1
     fi
@@ -42,6 +42,7 @@ _gpg_export_public() {
 
 _gpg_export_secret_primary() {
     fingerprint="$1"
+    key_id="${fingerprint:+${fingerprint:24}}"
     out_path="$2"
     passphrase="$3"
     no_armor="$4"
@@ -61,6 +62,8 @@ _gpg_export_secret_primary() {
     echod "  with_ssbs: $with_ssbs | $6"
     echod "ssl_encrypt: $openssl_encrypt"
 
+    echov "Exporting Secret Primary Key"
+
     echod "Building gpg command..."
     gpg_build_cmd "$homedir" "expsec" "$with_subs" "$no_armor" "$passphrase"
 
@@ -73,49 +76,57 @@ _gpg_export_secret_primary() {
         printf "\n"
 
         if [ "$openssl_encrypt" = "true" ]; then
-            echod "Calling $gpg_cmd \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
-            $gpg_cmd "$fingerprint" | encrypt_gpg_key "$out_path" "$openssl_passphrase"
+            echod "Calling $GPG_CMD \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
+            encrypt_gpg_key "$out_path" "$openssl_passphrase" "$($GPG_CMD "$fingerprint")"
+            add_to_gpg_key "$(basename -- "${out_path%%.*}")" "salt" "$salt"
+
         else
-            echod "Calling $gpg_cmd \"$fingerprint\" > \"$out_path\""
-            $gpg_cmd "$fingerprint" > "$out_path"
+            echod "Calling $GPG_CMD \"$fingerprint\" > \"$out_path\""
+            $GPG_CMD "$fingerprint" > "$out_path"
         fi
         unset openssl_passphrase
 
     # No passphrase at all
     elif [ -z "$passphrase" ]; then
         echoe TEST
-        echod "Calling printf \"%s\" \"\" | $gpg_cmd \"$fingerprint\" > \"$out_path\""
-        printf "%s" "" | $gpg_cmd "$fingerprint" > "$out_path"
+        echod "Calling printf \"%s\" \"\" | $GPG_CMD \"$fingerprint\" > \"$out_path\""
+        printf "%s" "" | $GPG_CMD "$fingerprint" > "$out_path"
 
     # Passphrase from parameter
     elif [ -n "$passphrase" ] && [ ! -f "$passphrase" ]; then
         if [ "$openssl_encrypt" = "true" ]; then
-            echod "Calling printf \"%s\" \"$passphrasedbg\" | $gpg_cmd \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
-            printf "%s" "$passphrase" | $gpg_cmd "$fingerprint" | encrypt_gpg_key "$out_path" "$passphrase"
+            echod "Calling printf \"%s\" \"$passphrasedbg\" | $GPG_CMD \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
+            encrypt_gpg_key "$out_path" "$passphrase" "$(printf "%s" "$passphrase" | $GPG_CMD "$fingerprint")"
+            add_to_gpg_key "$(basename -- "${out_path%%.*}")" "salt" "$salt"
         else
-            echod "Calling printf \"%s\" \"$passphrasedbg\" | $gpg_cmd \"$fingerprint\" > \"$out_path\""
-            printf "%s" "$passphrase" | $gpg_cmd "$fingerprint" > "$out_path"
+            echod "Calling printf \"%s\" \"$passphrasedbg\" | $GPG_CMD \"$fingerprint\" > \"$out_path\""
+            printf "%s" "$passphrase" | $GPG_CMD "$fingerprint" > "$out_path"
         fi
 
     # Passphrase from file
     elif [ -s "$passphrase" ]; then
         if [ "$openssl_encrypt" = "true" ]; then
-            echod "Calling $gpg_cmd \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
-            $gpg_cmd "$fingerprint" | encrypt_gpg_key "$out_path" "$passphrase"
-
+            echod "Calling $GPG_CMD \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
+            encrypt_gpg_key "$out_path" "$passphrase" "$($GPG_CMD "$fingerprint")"
+            add_to_gpg_key "$(basename -- "${out_path%%.*}")" "salt" "$salt"
         else
-            echod "Calling $gpg_cmd \"$fingerprint\" > \"$out_path\""
-            $gpg_cmd "$fingerprint" > "$out_path"
+            echod "Calling $GPG_CMD \"$fingerprint\" > \"$out_path\""
+            $GPG_CMD "$fingerprint" > "$out_path"
         fi
     fi
 
-    if { [ "$openssl_encrypt" = "true" ] && [ ! -s "$out_path.enc" ]; } || \
-       { [ "$openssl_encrypt" = "false" ] && [ ! -s "$out_path" ]; }; then
+    if [ "$openssl_encrypt" = "true" ] && [ ! -s "$out_path.enc" ]; then
+        echoe "Failed exporting Secret Key to $out_path.enc"
+        return 1
+    elif   [ "$openssl_encrypt" = "false" ] && [ ! -s "$out_path" ]; then
         echoe "Failed exporting Secret Key to $out_path"
         return 1
     fi
 
-    set_permissions_and_owner "$out_path" 440
+    if [ "$openssl_encrypt" != "true" ]; then
+        set_permissions_and_owner "$out_path" 440
+    fi
+
     return 0
 }
 
@@ -153,6 +164,8 @@ _gpg_export_secret_ssb_with_dummy() {
         return 1
     fi
 
+    echov "Exporting Dummy Primary Key with secret sub key$([ "$with_subkeys" = "true" ] && echo "s")"
+
     echod "Building gpg command..."
     gpg_build_cmd "$homedir" "expsecsub" "$with_subs" "$no_armor" "$passphrase"
 
@@ -165,14 +178,14 @@ _gpg_export_secret_ssb_with_dummy() {
         printf "\n"
 
         if [ "$openssl_encrypt" != "true" ]; then
-            echod "Calling $gpg_cmd \"$fingerprint\" > \"$out_path\""
-            if ! $gpg_cmd "$fingerprint" > "$out_path"; then
+            echod "Calling $GPG_CMD \"$fingerprint\" > \"$out_path\""
+            if ! $GPG_CMD "$fingerprint" > "$out_path"; then
                 echoe "Failed exporting all ssbkeys with dummy"
                 return 1
             fi
         else
             echod "Calling gpg --homedir \"$homedir\" $no_armor --export-secret-subkeys $with_subkeys \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
-            if ! $gpg_cmd "$fingerprint" | encrypt_gpg_key "$out_path" "${openssl_passphrase}"; then
+            if ! encrypt_gpg_key "$out_path" "${openssl_passphrase}" "$($GPG_CMD "$fingerprint")"; then
                 echoe "Failed exporting all ssbkeys with dummy"
                 return 1
             fi
@@ -181,8 +194,8 @@ _gpg_export_secret_ssb_with_dummy() {
 
     # No passphrase at all
     elif [ -z "$passphrase" ]; then
-        echod "Calling printf \"%s\" \"\" | $gpg_cmd \"$fingerprint\" > \"$out_path\""
-        if ! printf "%s" "" | $gpg_cmd "$fingerprint" > "$out_path"; then
+        echod "Calling printf \"%s\" \"\" | $GPG_CMD \"$fingerprint\" > \"$out_path\""
+        if ! printf "%s" "" | $GPG_CMD "$fingerprint" > "$out_path"; then
             echoe "Failed"
             return 1
         fi
@@ -190,14 +203,14 @@ _gpg_export_secret_ssb_with_dummy() {
     # Passphrase from parameter
     elif [ -n "$passphrase" ] && [ ! -f "$passphrase" ]; then
         if [ "$openssl_encrypt" != "true" ]; then
-            echod "Calling printf \"%s\" \"$passphrasedbg\" | $gpg_cmd \"$fingerprint\" > \"$out_path\""
-            if ! printf "%s" "$passphrase" | $gpg_cmd "$fingerprint" > "$out_path"; then
+            echod "Calling printf \"%s\" \"$passphrasedbg\" | $GPG_CMD \"$fingerprint\" > \"$out_path\""
+            if ! printf "%s" "$passphrase" | $GPG_CMD "$fingerprint" > "$out_path"; then
                 echoe "Failed"
                 return 1
             fi
         else
-            echod "Calling printf \"%s\" \"$passphrasedbg\" | $gpg_cmd \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
-            if ! printf "%s" "$passphrase" | $gpg_cmd "$fingerprint" | encrypt_gpg_key "$out_path" "${passphrase}"; then
+            echod "Calling printf \"%s\" \"$passphrasedbg\" | $GPG_CMD \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
+            if ! encrypt_gpg_key "$out_path" "${passphrase}" "$(printf "%s" "$passphrase" | $GPG_CMD "$fingerprint")"; then
                 echoe "Failed"
                 return 1
             fi
@@ -206,14 +219,14 @@ _gpg_export_secret_ssb_with_dummy() {
     # Passphrase from file
     elif [ -s "$passphrase" ]; then
         if [ "$openssl_encrypt" != "true" ]; then
-            echod "Calling $gpg_cmd \"$fingerprint\" > \"$out_path\""
-            if ! $gpg_cmd "$fingerprint" > "$out_path"; then
+            echod "Calling $GPG_CMD \"$fingerprint\" > \"$out_path\""
+            if ! $GPG_CMD "$fingerprint" > "$out_path"; then
                 echoe "Failed exporting dummy primary with all ssbs."
                 return 1
             fi
         else
-            echod "Calling $gpg_cmd \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
-            if ! $gpg_cmd "$fingerprint" | encrypt_gpg_key "$out_path" "${passphrase}"; then
+            echod "Calling $GPG_CMD \"$fingerprint\" | encrypt_gpg_key \"$out_path\" \"$passphrasedbg\""
+            if ! encrypt_gpg_key "$out_path" "${passphrase}" "$($GPG_CMD "$fingerprint")"; then
                 echoe "Failed exporting dummy primary with all ssbs."
                 return 1
             fi
@@ -234,7 +247,7 @@ _gpg_create_primary_key() {
     passphrase="$2"
     homedir="$3"
     expiry_date="$4"
-    usage="${5:-cert}"
+    usage="${5:-cert,sign}"
     passphrasedbg=$({ [ "$2" = "gui" ] || [ "$2" = "GUI" ]; } && echo "[GUI]")
     passphrasedbg=$({ [ -n "$2" ]  && [ ! -f "$2" ]; } && echo "[SET]" || echo "$2")
 
@@ -245,28 +258,30 @@ _gpg_create_primary_key() {
     echod "   expiry_date: $expiry_date"
     echod "         usage: $usage"
 
+    echov "Create Primary Key..."
+
     echod "Building gpg command..."
     gpg_build_cmd "$homedir" "gen" "" "" "$passphrase"
 
     # Use GUI to ask for passphrase
     if [ "$passphrase" = "gui" ] || [ "$passphrase" = "GUI" ]; then
-        echod "Calling $gpg_cmd \"$uid\" \"ed25519\" \"$usage\" \"$expiry_date\""
-        $gpg_cmd "$uid" "ed25519" "$usage" "$expiry_date" >/dev/null 2>&1
+        echod "Calling $GPG_CMD \"$uid\" \"ed25519\" \"$usage\" \"$expiry_date\""
+        $GPG_CMD "$uid" "ed25519" "$usage" "$expiry_date" >/dev/null 2>&1
 
     # No passphrase at all
     elif [ -z "$passphrase" ]; then
-        echod "Calling printf \"\" | $gpg_cmd \"$uid\" \"ed25519\" \"$usage\" \"$expiry_date\""
-        printf "%s" "" | $gpg_cmd "$uid" "ed25519" "$usage" "$expiry_date" >/dev/null 2>&1
+        echod "Calling printf \"\" | $GPG_CMD \"$uid\" \"ed25519\" \"$usage\" \"$expiry_date\""
+        printf "%s" "" | $GPG_CMD "$uid" "ed25519" "$usage" "$expiry_date" >/dev/null 2>&1
 
     # Passphrase from cmdline
     elif [ -n "$passphrase" ] && [ ! -f "$passphrase" ]; then
-        echod "Calling printf \"%s\" \"$passphrasedbg\" | $gpg_cmd \"$uid\" \"ed25519\" \"$usage\" \"$expiry_date\""
-        printf "%s" "$passphrase" | $gpg_cmd "$uid" "ed25519" "$usage" "$expiry_date" >/dev/null 2>&1
+        echod "Calling printf \"%s\" \"$passphrasedbg\" | $GPG_CMD \"$uid\" \"ed25519\" \"$usage\" \"$expiry_date\""
+        printf "%s" "$passphrase" | $GPG_CMD "$uid" "ed25519" "$usage" "$expiry_date" >/dev/null 2>&1
 
     # Passphrase from file
     elif [ -s "$passphrase" ]; then
-        echod "Calling $gpg_cmd \"$uid\" \"ed25519\" \"$usage\" \"$expiry_date\""
-        $gpg_cmd "$uid" "ed25519" "$usage" "$expiry_date" >/dev/null 2>&1
+        echod "Calling $GPG_CMD \"$uid\" \"ed25519\" \"$usage\" \"$expiry_date\""
+        $GPG_CMD "$uid" "ed25519" "$usage" "$expiry_date" >/dev/null 2>&1
     fi
 
     # shellcheck disable=SC2181
@@ -316,8 +331,8 @@ _gpg_add_subkey() {
             echod "Trust UID: printf \"trust\n5\ny\nsave\" | gpg --homedir \"$homedir\" --command-fd 0 --edit-key \"$primary_key_id\" 2>&1"
             printf "trust\n5\ny\nsave\n" | gpg --batch --homedir "$homedir" --command-fd 0 --edit-key "$primary_key_id" 2>/dev/null
         fi
-        echod "Add $usage Key: $gpg_cmd \"$primary_key_id\" \"$curve\" \"$usage\" \"$expiry_date\""
-        $gpg_cmd "$primary_key_id" "$curve" "$usage" "$expiry_date" 2>&1
+        echod "Add $usage Key: $GPG_CMD \"$primary_key_id\" \"$curve\" \"$usage\" \"$expiry_date\""
+        $GPG_CMD "$primary_key_id" "$curve" "$usage" "$expiry_date" 2>&1
 
     # No passphrase at all
     elif [ -z "$passphrase" ]; then
@@ -328,8 +343,8 @@ _gpg_add_subkey() {
             echod "Trust UID: printf \"trust\n5\ny\nsave\" | gpg --homedir \"$homedir\" --command-fd 0 --edit-key \"$primary_key_id\" 2>&1"
             printf "trust\n5\ny\nsave\n" | gpg --batch --homedir "$homedir" --command-fd 0 --edit-key "$primary_key_id" 2>/dev/null
         fi
-        echod "Add $usage Key: printf \"%s\" \"\" | $gpg_cmd \"$primary_key_id\" \"$curve\" \"$usage\" \"$expiry_date\""
-        printf "%s" "" | $gpg_cmd "$primary_key_id" "$curve" "$usage" "$expiry_date" 2>&1
+        echod "Add $usage Key: printf \"%s\" \"\" | $GPG_CMD \"$primary_key_id\" \"$curve\" \"$usage\" \"$expiry_date\""
+        printf "%s" "" | $GPG_CMD "$primary_key_id" "$curve" "$usage" "$expiry_date" 2>&1
 
     # Read pass from cmdline
     elif [ -n "$passphrase" ] && [ ! -f "$passphrase" ]; then
@@ -341,7 +356,7 @@ _gpg_add_subkey() {
             printf "trust\n5\ny\nsave\n" | gpg --batch --homedir "$homedir" --command-fd 0 --edit-key "$primary_key_id" 2>/dev/null
         fi
         echod "Add $usage Key: printf \"%s\" \"$passphrasedbg\" | gpg --batch --homedir \"$homedir\" --pinentry-mode loopback --passphrase-fd 0 --quick-add-key \"$primary_key_id\" \"$curve\" \"$usage\" \"$expiry_date\""
-        printf "%s" "$passphrase" | $gpg_cmd "$primary_key_id" "$curve" "$usage" "$expiry_date" 2>&1
+        printf "%s" "$passphrase" | $GPG_CMD "$primary_key_id" "$curve" "$usage" "$expiry_date" 2>&1
 
     # Read pass from file
     elif [ -s "$passphrase" ]; then
@@ -352,8 +367,8 @@ _gpg_add_subkey() {
             echod "Trust UID: printf \"trust\n5\ny\nsave\" | gpg --homedir \"$homedir\" --command-fd 0 --edit-key \"$primary_key_id\" 2>&1"
             printf "trust\n5\ny\nsave\n" | gpg --batch --homedir "$homedir" --command-fd 0 --edit-key "$primary_key_id" 2>/dev/null
         fi
-        echod "Add $usage Key: $gpg_cmd \"$primary_key_id\" \"$curve\" \"$usage\" \"$expiry_date\""
-        $gpg_cmd "$primary_key_id" "$curve" "$usage" "$expiry_date" 2>&1
+        echod "Add $usage Key: $GPG_CMD \"$primary_key_id\" \"$curve\" \"$usage\" \"$expiry_date\""
+        $GPG_CMD "$primary_key_id" "$curve" "$usage" "$expiry_date" 2>&1
     fi
 
     # shellcheck disable=SC2181
@@ -581,8 +596,13 @@ gpg_create_subkey() {
     auth="${11:-false}"
     index="${12:-}"
     expires="${13:-2y}"
+    sub_passphrase=${14:-$passphrase}
     passphrasedbg=$({ [ "${8}" = "gui" ] || [ "${8}" = "GUI" ]; } && echo "[GUI]")
     passphrasedbg=$({ [ -n "${8}" ]  && [ ! -f "${8}" ]; } && echo "[SET]" || echo "${8}")
+    sub_passphrasedbg=$({ [ "${14}" = "gui" ] || [ "${14}" = "GUI" ]; } && echo "[GUI]")
+    sub_passphrasedbg=$({ [ -n "${14}" ]  && [ ! -f "${14}" ]; } && echo "[SET]" || echo "${14}")
+
+
     echoi "Adding subkey to primary key"
 
     echod "Starting gpg_create_subkey with parameters:"
@@ -598,6 +618,8 @@ gpg_create_subkey() {
     echod "          sign: $sign"
     echod "          auth: $auth"
     echod "         index: $index"
+    echod "       expires: $expires"
+    echod "sub_passphrase: $sub_passphrasedbg"
 
     # Validate params
     if [ -n "$name_real" ] && [ -z "$name_email" ]; then
@@ -648,8 +670,8 @@ gpg_create_subkey() {
         fingerprint=$(get_value_by_key_match "fingerprint" "uid" "$uid")
     fi
 
-    echod "Calling _gpg_add_subkey \"$fingerprint\" \"$passphrasedbg\" \"$homedir\" \"$curve\" \"$usage\" \"$expires\" \"$uid\""
-    if ! _gpg_add_subkey "$fingerprint" "$passphrase" "$homedir" "$curve" "$usage" "$expires" "$uid"; then
+    echod "Calling _gpg_add_subkey \"$fingerprint\" \"$sub_passphrasedbg\" \"$homedir\" \"$curve\" \"$usage\" \"$expires\" \"$uid\""
+    if ! _gpg_add_subkey "$fingerprint" "$sub_passphrase" "$homedir" "$curve" "$usage" "$expires" "$uid"; then
         echoe "Failed calling _gpg_add_subkey"
         return 1
     fi
@@ -778,9 +800,9 @@ gpg_export_keypair() {
 
     # Find out if key_id is subkey
     subkey="false"
-    for index in jq -r '.gpg.keys | to_entries[] | .key // empty' "$DC_DB"; do
+    for index in jq -r '.gpg.keys | to_entries[] | .key // empty' -- "$DC_DB"; do
         # shellcheck disable=SC2016
-        for sidx in jq -r --arg idx "$index" '.gpg.keys[$idx].subkeys | to_entries[] | .key // empty' "$DC_DB"; do
+        for sidx in jq -r --arg idx "$index" '.gpg.keys[$idx].subkeys | to_entries[] | .key // empty' -- "$DC_DB"; do
             if [ "$sidx" = "${fingerprint:24}" ]; then
                 subkey="true"
                 echod "$fingerprint is subkey"
@@ -824,24 +846,54 @@ gpg_export_keypair() {
 
 gpg_import_keys() {
     import_path="${1:+$(absolutepath "$1")}"
-    import_path="${1:-$(absolutepath ".")}"
+    import_path="${1:-$(dirpath ".")}"
     passphrase="$2"
     scan_depth="${3:-1}"
     index="${4:+$(echo "$4" | sed -e 's/\-/\_/g' -e 's/\ /\_/g' | tr "[:upper:]" "[:lower:]")}"
     remove_keys="${5:-false}"
-    openssl_decrypt="${6:-true}"
+    homedir="${6:-$DC_GNUPG}"
     passphrasedbg=$({ [ "$2" = "gui" ] || [ "$2" = "GUI" ]; } && echo "[GUI]")
     passphrasedbg=$({ [ -n "$2" ]  && [ ! -f "$2" ]; } && echo "[SET]" || echo "$2")
 
-
     echod "Starting gpg_import_keys with parameters:"
-    echod "        index: $index"
-    echod "  import-path: $import_path"
-    echod "   passphrase: $passphrasedbg"
-    echod "   scan_depth: $scan_depth"
-    echod "  remove_keys: $remove_keys"
+    echod "             index: $index"
+    echod "       import_path: $import_path"
+    echod "        passphrase: $passphrasedbg"
+    echod "        scan_depth: $scan_depth"
+    echod "       remove_keys: $remove_keys"
+    echod "           homedir: $homedir"
 
-    echos "Importing GPG Keys successful. Amount: $c"
+    echoi "Importing keys from path: $import_path"
+
+    imports=0
+    files=$(find "$import_path" -maxdepth "$scan_depth" -name "*.asc" -o -name "*.gpg" -o -name "*.asc.enc" -o -name "*.gpg.enc")
+    for file in $files; do
+        file=$(absolutepath "$file")
+        mime=$(file "$file" | awk -F': ' '{print $2}')
+        echov "Found file: $file"
+        if [ "${file##*.}" = "enc" ] || [ "$mime" = "openssl enc'd data with salted password" ]; then
+            gpg_build_cmd "$homedir" "imp" "" "" "$passphrase"
+            echod "Calling decrypt_gpg_key \"$(basename "$file")\" \"$index\" \"$passphrasedbg\" | $GPG_CMD"
+            if ! decrypt_gpg_key "$(basename "$file")" "$index" "$passphrase" | $GPG_CMD; then
+                echoe "Faile calling decrypt_gpg_key"
+                return 1
+            fi
+            imports=$(( imports + 1 ))
+            echosv "Imported Secret Key successfully"
+        elif { [ "${file##*.}" = "asc" ] || [ "${file##*.}" = "gpg" ]; } && ! { file "$file" | grep -qE "openssl enc'd data with salted password"; };  then
+            gpg_build_cmd "$homedir" "imp"
+            echod "Calling $GPG_CMD \"$file\""
+            if ! $GPG_CMD "$file"; then
+                echoe "Faile calling decrypt_gpg_key"
+                return 1
+            fi
+            imports=$(( imports + 1 ))
+            echosv "Imported Public Key successfully"
+        fi
+
+    done
+
+    echos "Importing GPG Keys successful. Amount: $imports"
 }
 
 
@@ -882,7 +934,6 @@ sign_pkgbuild() {
         echoe "Unknown file type: $(file "$path" | awk -F',' '{print $1}')"
         return 1
     fi
-
 
     if [ "$makepkg" = "false" ] || ! which makepkg >/dev/null 2>&1; then
         if [ -z "$passphrase" ]; then
