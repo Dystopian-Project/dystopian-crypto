@@ -3,7 +3,7 @@ name: Auto Sync Fork
 on:
   schedule:
     # runs every day at 01:00 UTC
-    - cron: '*/5 * * * *'
+    - cron: '0 1 * * *'
   workflow_dispatch:
 
 jobs:
@@ -24,8 +24,12 @@ jobs:
       - name: Detect default branch
         id: default_branch
         run: |
-          # Try the repo's default branch via GitHub context, otherwise fall back to 'main'
-          echo "branch=${{ github.event.repository.default_branch || 'main' }}" >> $GITHUB_OUTPUT
+          # Use GitHub-provided default branch if present, otherwise fallback to 'main'
+          BRANCH="${{ github.event.repository.default_branch }}"
+          if [ -z "$BRANCH" ]; then
+            BRANCH=main
+          fi
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
 
       - name: Add upstream remote and fetch
         run: |
@@ -41,7 +45,8 @@ jobs:
             echo "Fast-forwarded ${TARGET_BRANCH} from upstream/${TARGET_BRANCH}"
           else
             echo "Fast-forward failed; performing regular merge"
-            git merge "upstream/${TARGET_BRANCH}" --no-edit || true
+            # Remove "|| true" to let the job fail on merge conflicts so you can inspect logs
+            git merge "upstream/${TARGET_BRANCH}" --no-edit
           fi
 
       - name: Push changes
@@ -49,5 +54,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TARGET_BRANCH="${{ steps.default_branch.outputs.branch }}"
-          git pull origin "$TARGET_BRANCH" --rebase
           git push origin "$TARGET_BRANCH"
