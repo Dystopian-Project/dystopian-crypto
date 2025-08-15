@@ -49,4 +49,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TARGET_BRANCH="${{ steps.default_branch.outputs.branch }}"
+          git pull origin "$TARGET_BRANCH" --rebase
           git push origin "$TARGET_BRANCH"
