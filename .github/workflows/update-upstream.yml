@@ -36,6 +36,7 @@ jobs:
   
       - name: Push changes
         run: |
+          git pull origin merge-upstream-${{ env.DATE }} --rebase || true
           git push origin merge-upstream-${{ env.DATE }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
