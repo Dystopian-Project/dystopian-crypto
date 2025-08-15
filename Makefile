@@ -13,6 +13,8 @@ setup:
 	install -d -m 750 /etc/dcrypto/old
 	install -d -m 700 /etc/dcrypto/gnupg
 	install -d -m 755 /etc/dcrypto/crl
+	install -d -m 700 /etc/dcrypto/secboot
+	install -d -m 700 /etc/dcrypto/secboot/ms
 	install -m 600 conf/db.json /etc/dcrypto/db.json
 	install -d $(PREFIX)/lib/dcrypto
 	install -m 640 lib/variables.sh $(PREFIX)/lib/dcrypto/variables.sh
@@ -20,5 +22,6 @@ setup:
 	install -m 640 lib/helper.sh $(PREFIX)/lib/dcrypto/helper.sh
 	install -m 640 lib/ssl.sh $(PREFIX)/lib/dcrypto/ssl.sh
 	install -m 640 lib/gpg.sh $(PREFIX)/lib/dcrypto/gpg.sh
+	install -m 640 lib/secboot.sh $(PREFIX)/lib/dcrypto/secboot.sh
 	install -d $(PREFIX)/share/doc/dcrypto
 	install -m 644 README.md $(PREFIX)/share/doc/dcrypto/README.md
