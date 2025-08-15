@@ -47,4 +47,4 @@ jobs:
           title: "Merge upstream dcrypto"
           body: "Automated merge of upstream dcrypto"
           branch: merge-upstream-${{ env.DATE }}
-          base: main
+          base: master
