@@ -1,0 +1,44 @@
+name: Update Upstream Linux Kernel
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Git
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/dcx7c5/dcrypto.git || true
+          git fetch upstream
+
+      - name: Create branch and merge upstream
+        run: |
+          git checkout -b merge-upstream-$(date +%Y%m%d)
+          git merge upstream/v6.16 -m "Merge upstream v6.16"
+        continue-on-error: true
+
+      - name: Push changes
+        run: |
+          git push origin merge-upstream-$(date +%Y%m%d)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          title: "Merge upstream dcrypto"
+          body: "Automated merge of upstream dcrypto"
+          branch: merge-upstream-$(date +%Y%m%d)
