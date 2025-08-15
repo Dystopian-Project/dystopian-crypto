@@ -598,7 +598,7 @@ get_dir_from_index() {
         '.ssl.keys[idx] | .dir //
          .ssl.ca.root[$idx] | .dir //
          .ssl.ca.intermediate[$idx] | .dir //
-         empty' "$DC_DB"
+         empty' -- "$DC_DB"
 }
 
 rename_file_if_exists() {
@@ -634,7 +634,7 @@ absolutepath() {
     if which realpath >/dev/null 2>&1; then
         realpath -- "$1"
     else
-        dir="$(dirpath -- "$1")"
+        dir="$(dirpath "$1")"
         basename="${1##*/}"
         echo "$dir/$basename"
     fi
@@ -642,7 +642,7 @@ absolutepath() {
 }
 
 absolutepathidx() {
-    dir="$(dirpath -- "$1")"
+    dir="$(dirpath "$1")"
     basename="${1##*/}"
     ext="${basename##*.}"
     base="${basename%*".$ext"}"
@@ -704,6 +704,13 @@ dirpath() {
     return 0
 }
 
+filename() {
+    if which basename >/dev/null 2>&1; then
+        basename -- "$1"
+        return 0
+    fi
+    echo "$1" | awk -F'/' '{print $NF}'
+}
 
 get_index_from_filename() {
     basename="${1##*/}"
@@ -853,28 +860,55 @@ get_name_comment_from_uid() {
 
 
 gpg_build_cmd() {
-    gpg_cmd="gpg"
-    [ -n "$1" ] && gpg_cmd="$gpg_cmd --homedir ${1}"
-    { [ "$2" = "add" ] || [ "$2" = "gen" ]; } && [ -n "$5" ] && gpg_cmd="$gpg_cmd --batch"
-    [ "$4" = "false" ] && gpg_cmd="$gpg_cmd --armor"
-    [ -s "$5" ] && gpg_cmd="$gpg_cmd --pinentry-mode loopback --passphrase-file ${5}"
-    { { [ -n "$5" ] && [ ! -f "$5" ]; } || [ -z "$5" ]; } && [ "$2" != "exp" ] && gpg_cmd="$gpg_cmd --pinentry-mode loopback --passphrase-fd 0"
-    [ "$2" = "exp" ] && gpg_cmd="$gpg_cmd --export"
-    [ "$2" = "imp" ] && gpg_cmd="$gpg_cmd --import"
-    [ "$2" = "expsec" ] && gpg_cmd="$gpg_cmd --export-secret-keys"
-    [ "$2" = "expsecsub" ] && gpg_cmd="$gpg_cmd --export-secret-subkeys"
-    [ "$3" = "true" ] && gpg_cmd="$gpg_cmd -a"
-    [ "$2" = "gen" ] && gpg_cmd="$gpg_cmd --quick-gen-key"
-    [ "$2" = "add" ] && gpg_cmd="$gpg_cmd --quick-add-key"
+    { [ "$2" = "add" ] || [ "$2" = "gen" ] || [ "$2" = "adduid" ]; } && [ -n "$5" ] && GPG_CMD="$GPG_CMD --batch"
+    [ "$2" = "imp" ] && [ -z "$5" ] && gpg_cmd="$GPG_CMD --batch"
+    [ -n "$1" ] && GPG_CMD="$GPG_CMD --homedir ${1}"
+    [ "$4" = "false" ] && GPG_CMD="$GPG_CMD --armor"
+    [ -s "$5" ] && GPG_CMD="$GPG_CMD --pinentry-mode loopback --passphrase-file ${5}"
+    { { [ -n "$5" ] && [ ! -f "$5" ]; } || [ -z "$5" ]; } && { [ "$2" != "exp" ] && [ "$2" != "imp" ]; } && GPG_CMD="$GPG_CMD --pinentry-mode loopback --passphrase-fd 0"
+    [ "$2" = "exp" ] && GPG_CMD="$GPG_CMD --export"
+    [ "$2" = "imp" ] && GPG_CMD="$GPG_CMD --import"
+    [ "$2" = "expsec" ] && GPG_CMD="$GPG_CMD --export-secret-keys"
+    [ "$2" = "expsecsub" ] && GPG_CMD="$GPG_CMD --export-secret-subkeys"
+    [ "$3" = "true" ] && GPG_CMD="$GPG_CMD -a"
+    [ "$2" = "gen" ] && GPG_CMD="$GPG_CMD --quick-gen-key"
+    [ "$2" = "add" ] && GPG_CMD="$GPG_CMD --quick-add-key"
+    [ "$2" = "adduid" ] && GPG_CMD="$GPG_CMD --quick-add-uid"
 }
 
 
 ssl_build_cmd() {
-    ssl_cmd="openssl aes-256-cbc"
-    [ "${2##*.}" = "enc" ] && ssl_cmd="$ssl_cmd -d" || ssl_cmd="$ssl_cmd -e"
-    [ "${3:-true}" = "true" ] && ssl_cmd="$ssl_cmd -pbkdf2"
-    [ -s "$1" ] && ssl_cmd="$ssl_cmd -pass file:$1" || ssl_cmd="$ssl_cmd -pass pass:$1"
-    [ "${2##*.}" = "enc" ] && ssl_cmd="$ssl_cmd -in $2" || ssl_cmd="$ssl_cmd -out ${2}.enc"
+    use="$1"
+    in="$2"
+    out="$3"
+    passphrase="$4"
+    no_argon="${5:-false}"
+    tpm="${6:-false}"
+
+    SSL_CMD="openssl"
+    # Usage scenarios
+    [ "$use" = "key" ] && SSL_CMD="$SSL_CMD genpkey"
+    [ "$use" = "req" ] && SSL_CMD="$SSL_CMD req"
+    [ "$use" = "crt" ] && SSL_CMD="$SSL_CMD x509"
+    { [ "$use" = "enc" ] || [ "$use" = "dec" ]; } && SSL_CMD="$SSL_CMD aes-256-cbc"
+    [ "$use" = "dec" ] && SSL_CMD="$SSL_CMD -d"
+    [ "$use" = "enc" ] && SSL_CMD="$SSL_CMD -e"
+
+    # Check tpm
+    { [ "$tpm" = "true" ] && [ "$use" = "crt" ]; } && SSL_CMD="$SSL_CMD -provider tpm2"
+
+    # No argon
+    { [ -n "$passphrase" ] && [ "$no_argon" = "true" ]; } && SSL_CMD="$SSL_CMD -pbkdf2"
+
+    # Passphrase
+    if [ "$passphrase" != "cli" ] && [ "$passphrase" != "CLI" ]; then
+        [ -s "$passphrase" ] && SSL_CMD="$SSL_CMD -pass file:$1"
+        { [ -n "$passphrase" ] && [ ! -f "$passphrase" ]; } && SSL_CMD="$SSL_CMD -pass pass:$1"
+    fi
+
+    { [ -n "$in" ] && [ "$in" != "stdin" ] && [ "$in" != "-" ]; } && SSL_CMD="$SSL_CMD -in $in"
+    { [ -n "$out" ] && [ "$out" != "stdout" ] && [ "$out" != "-" ]; } && SSL_CMD="$SSL_CMD -out $out"
+
 }
 
 
@@ -890,10 +924,10 @@ check_gpg_key_integrity() {
     }
 
     if grep -qE "BEGIN PGP (PUBLIC|PRIVATE) KEY BLOCK" -- "$1"; then
-        gpg --batch --homedir "$DC_FAKE_GNUPG" --import "$1"
+        gpg --batch --homedir "$DC_FAKE_GNUPG" --import -- "$1"
     elif file -- "$1" | grep -q "openssl enc"; then
         ssl_build_cmd "$2" "$1"
-        $ssl_cmd | gpg --batch --homedir "$DC_FAKE_GNUPG" --import "$1"
+        $SSL_CMD | gpg --batch --homedir "$DC_FAKE_GNUPG" --import -- "$1"
     else
         echoe "Key is not a GPG key"
     fi
@@ -911,12 +945,13 @@ check_gpg_key_integrity() {
 encrypt_gpg_key() {
     salt=$(openssl rand -hex 16)
     iv=$(openssl rand -hex 16)
+
     {
+        echo "Salted__"
         echo "$iv"
-        openssl enc -e \
-                -aes-256-cbc \
-                -iv "$iv" \
-                -K "$(_create_argon2id_derived_key_pw "$2" "$salt")"
+        echo "$3" | openssl aes-256-cbc -e \
+                                 -K "$(_create_argon2id_derived_key_pw "$2" "$salt")" \
+                                 -iv "$iv"
     } > "${1}.enc"
 
     if [ ! -s "${1}.enc" ]; then
@@ -925,27 +960,156 @@ encrypt_gpg_key() {
     fi
 
     set_permissions_and_owner "${1}.enc" 440
-    add_to_gpg_key "$(basename -- "${1%%.*}")" "salt" "$salt"
     return 0
 }
 
 decrypt_gpg_key() {
-    index="$(basename -- "${1%%.*}")"
-    salt="$(get_value "$index" "salt")"
+    path="${1:+$(basename -- "$1")}"
+    index="${2:-$(basename -- "${path%%.*}")}"
+    passphrase="$3"
+    salt="$(get_gpg_value "$index" "salt")"
+    iv=$(sed -n '2p' "$path")
+    passphrasedbg="${3:+$()}"
+    saltdbg="${salt}"
 
-    # Read the IV from the second line of the file.
-    iv=$(sed -n '1p' "$1")
-     if [ -z "$iv" ]; then
-        echoe "Could not read IV from file: $1"
+    echod "Starting decrypt_gpg_key with parameters:"
+    echod "      path: $path"
+    echod "     index: $index"
+    echod "      salt: $salt"
+    echod "        iv: $iv"
+
+    echoi "Decrypting gpg key..."
+
+    echod "Decrypt Key: tail -n +3 \"$path\" | openssl aes-256-cbc -d -iv \"$iv\" -K \"\$(_create_argon2id_derived_key_pw "" "")\""
+
+    tail -n +3 "$path" | openssl aes-256-cbc -d \
+            -iv "$iv" \
+            -K "$(_create_argon2id_derived_key_pw "$3" "$salt")"
+
+    # jq -r --arg idx "$index" 'del(.gpg.keys[$idx].salt)' "$DC_DB"
+
+}
+
+install_package() {
+    package="$1"
+
+    if [ -f /etc/os-release ]; then
+        while read -r line; do
+            case "$line" in
+                ID=*)
+                    distro=$(printf "%s\n" "$line" | sed 's/ID_LIKE=//')
+                    if [ -z "$distro" ]; then
+                        distro=$(printf "%s\n" "$line" | sed 's/ID=//')
+                    fi
+                    ;;
+            esac
+        done < /etc/os-release
+    else
+        echoe "Cannot detect distribution. /etc/os-release not found."
         return 1
     fi
 
+    case "$distro" in
+        ubuntu | debian)
+            echov "Detected $distro. Using apt to install $package..."
+            # Update package lists
+            apt update
+            # Install the package
+            if apt install -y "$package"; then
+                echoi "$package installed successfully"
+            else
+                echoe "Failed to install $package"
+                return 1
+            fi
+            ;;
+        arch)
+            echov "Detected Arch Linux. Using pacman to install $package..."
+            # Sync and install the package
+            if pacman -S --noconfirm "$package"; then
+                echoi "$package installed successfully."
+            else
+                echoe "Failed to install $package"
+                return 1
+            fi
+            ;;
+        *)
+            echoe "Unsupported distribution: $distro"
+            return 1
+            ;;
+    esac
+    return 0
+}
 
-    tail -n +2 -- "$1" | \
-    openssl enc -aes-256-cbc -d \
-                -K "$(_create_argon2id_derived_key_pw "$2" "$salt")" \
-                -iv "$iv)"
+check_dependencies_secureboot() {
+bla
+}
 
-    jq -r --arg idx "$index" 'del(.gpg.keys[$idx].salt)' "$DC_DB"
+remount_efivars_rw() {
+    echod "Remounting efivars to read/write"
+    mount -o rw,remount /sys/firmware/efi/efivars || {
+        echoe "Failed remounting efivars to read/write"
+        return 1
+    }
+    echod "$(mount | grep efivars)"
+    return 0
+}
 
+remount_efivars_ro() {
+    echod "Remounting efivars to read only"
+    mount -o ro,remount /sys/firmware/efi/efivars || {
+        echoe "Failed remounting efivars to read only"
+        return 1
+    }
+    echod "$(mount | grep efivars)"
+    return 0
+}
+
+
+ssl_convert_der_to_pem() {
+    echod "Converting DER to PEM:"
+    openssl x509 -inform der -outform pem -in "$1" -out "${1%.*}.pem"
+    echod "Converted $1 to ${1%.*}.pem"
+}
+
+ssl_convert_pem_to_der() {
+    echod "Converting PEM to DER:"
+    openssl x509 -inform pem -outform der -in "$1" -out "${1%.*}.der"
+    echod "Converted $1 to ${1%.*}.pem"
+}
+
+download_ms_kek_certs() {
+    echoi "Downloading Microsoft Corporation KEK CA 2011 certificate and  Microsoft Corporation KEK 2K CA 2023..."
+    pk=$(wget -qO - "")
+
+}
+
+detect_distro() {
+    # Detect the distribution
+    if [ -f /etc/os-release ]; then
+        while read -r line; do
+            case "$line" in
+                ID=*|ID_LIKE=*)
+                    distro=$(printf "%s\n" "$line" | sed 's/ID_LIKE=//')
+                    [ -z "$distro" ] && distro=$(printf "%s\n" "$line" | sed 's/ID=//')
+                    ;;
+            esac
+        done < /etc/os-release
+    else
+        echoe "Cannot detect distribution. /etc/os-release not found."
+        return 1
+    fi
+
+    echod "Detected distribution: $distro"
+}
+
+check_secureboot_status() {
+    SECUREBOOT_ENABLED=$(od --address-radix=n \
+                            --format=u1 "/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c" | \
+                            awk -F' ' '{print $NF}')
+    if [ "$?" -ne 0 ]; then
+        echoe "Failed checking secureboot status"
+        return 1
+    fi
+
+    return 0
 }
