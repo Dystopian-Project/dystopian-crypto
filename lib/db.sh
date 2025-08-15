@@ -737,3 +737,7 @@ sb_save_vendor() {
     fi
     return 0
 }
+
+test() {
+  echo
+}
