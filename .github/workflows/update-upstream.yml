@@ -27,7 +27,7 @@ jobs:
       - name: Create branch and merge upstream
         run: |
           git checkout -b merge-upstream-$(date +%Y%m%d)
-          git merge upstream/v6.16 -m "Merge upstream v6.16"
+          git merge upstream -m "Merge upstream dcrypto-$(date +%Y%m%d)"
         continue-on-error: true
 
       - name: Push changes
