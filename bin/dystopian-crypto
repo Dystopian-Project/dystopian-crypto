@@ -964,7 +964,7 @@ main() {
             restore_dcrypto "$restore_from" "$restore_force"
             ;;
 
-        --reset-dcrypto|reset-dcrypto)
+        --reset-dystopian-crypto|reset-dystopian-crypto|--reset-dcrypto|reset-dcrypto)
             shift
             reset_ssl="false"
             reset_gpg="false"

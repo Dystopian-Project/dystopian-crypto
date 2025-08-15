@@ -1,6 +1,7 @@
 PREFIX = /usr/local
 
 install: setup
+uninstall: remove
 
 setup:
 	install -d $(PREFIX)/bin
@@ -25,3 +26,35 @@ setup:
 	install -m 640 lib/secboot.sh $(PREFIX)/lib/dystopian-crypto/secboot.sh
 	install -d $(PREFIX)/share/doc/dystopian-crypto
 	install -m 644 README.md $(PREFIX)/share/doc/dystopian-crypto/README.md
+
+remove:
+	# remove installed executables and library files
+	rm -f $(PREFIX)/bin/dystopian-crypto
+	rm -f $(PREFIX)/lib/dystopian-crypto/variables.sh
+	rm -f $(PREFIX)/lib/dystopian-crypto/db.sh
+	rm -f $(PREFIX)/lib/dystopian-crypto/helper.sh
+	rm -f $(PREFIX)/lib/dystopian-crypto/ssl.sh
+	rm -f $(PREFIX)/lib/dystopian-crypto/gpg.sh
+	rm -f $(PREFIX)/lib/dystopian-crypto/secboot.sh
+	# try to remove lib dir if empty
+	rmdir $(PREFIX)/lib/dystopian-crypto || true
+
+	# remove documentation
+	rm -f $(PREFIX)/share/doc/dystopian-crypto/README.md
+	rmdir $(PREFIX)/share/doc/dystopian-crypto || true
+
+	# remove configuration/db file
+	rm -f /etc/dystopian-crypto/db.json
+
+	# attempt to remove directories created under /etc; rmdir will only remove if empty
+	rmdir /etc/dystopian-crypto/ca/private || true
+	rmdir /etc/dystopian-crypto/ca || true
+	rmdir /etc/dystopian-crypto/cert/private || true
+	rmdir /etc/dystopian-crypto/cert || true
+	rmdir /etc/dystopian-crypto/old || true
+	rmdir /etc/dystopian-crypto/gnupg || true
+	rmdir /etc/dystopian-crypto/crl || true
+	rmdir /etc/dystopian-crypto/secboot/ms || true
+	rmdir /etc/dystopian-crypto/secboot || true
+	# final attempt to remove top-level config directory if it's empty
+	rmdir /etc/dystopian-crypto || true
