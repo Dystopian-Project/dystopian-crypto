@@ -1,0 +1,43 @@
+{
+  "UUID": "",
+    "MOK": {
+      "cert": {
+        "path": "",
+        "hash": ""
+      },
+      "key": {
+        "path": "",
+        "hash": ""
+      }
+    },
+    "PK": {
+      "cert": {
+        "path": "",
+        "hash": ""
+      },
+      "key": {
+        "path": "",
+        "hash": ""
+      }
+    },
+    "KEK": {
+      "cert": {
+        "path": "",
+        "hash": ""
+      },
+      "key": {
+        "path": "",
+        "hash": ""
+      }
+    },
+    "db": {
+      "cert": {
+        "path": "",
+        "hash": ""
+      },
+      "key": {
+        "path": "",
+        "hash": ""
+      }
+    }
+}
