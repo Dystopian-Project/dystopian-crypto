@@ -1,4 +1,5 @@
 {
+  "defaultRootCA": "",
   "defaultCA": "",
   "defaultGpgKey": "",
   "defaultSigning": "",

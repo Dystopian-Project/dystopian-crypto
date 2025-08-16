@@ -578,7 +578,7 @@ _create_and_verify_sscert() {
     echod "  ca_conf_out: $ca_conf_out"
     echod "     no_argon: $no_argon"
     echod "         days: $days"
-    echod "         user: $DC_USER"
+    echod "         user: $DYSTOPIAN_USER"
 
     (
         # Log the OpenSSL command
@@ -1127,7 +1127,7 @@ create_certificate_signing_request() {
     echod "       orgunit: $orgunit"
     echod "   common_name: $common_name"
     echod "       crldist: $crldist"
-    echod "          user: $DC_USER"
+    echod "          user: $DYSTOPIAN_USER"
 
     echod "Validating input parameters"
     # Validate required parameters
@@ -1245,7 +1245,7 @@ sign_certificate_request() {
     echod "      keep_csr: $keep_csr"
     echod "      keep_cfg: $keep_cfg"
     echod " fullchain_out: $fullchain_out"
-    echod "          user: $DC_USER"
+    echod "          user: $DYSTOPIAN_USER"
 
     # Try to parse index from csr_file or get csr_file via index
     if [ -z "$csr_name" ] && [ ! -f "$csr_file" ]; then
@@ -1971,7 +1971,7 @@ import_ssl() {
     echod "       scan_depth: $scan_depth"
     echod "       copy_files: $copy_files"
     echod "       move_files: $move_files"
-    echod "             user: $DC_USER"
+    echod "             user: $DYSTOPIAN_USER"
 
     : "${filecount:=0}"
 

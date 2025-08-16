@@ -1,20 +1,22 @@
 #!/bin/sh
 # shellcheck shell=sh
 # shellcheck disable=SC2001
+# shellcheck disable=SC2034
 
-if [ "$(id -u)" -ne 0 ]; then
+
+if [ "$(id -u)" -ne 0 ] && { [ "$1" != "--help" ] && [ "$1" != "-h" ]; }; then
     echo "User must be root"
     exit 1
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-VAR_LIB_FILE="/usr/local/lib/dystopian-tools/variables.sh"
-DB_LIB_FILE="/usr/local/lib/dystopian-tools/crypto-db.sh"
-HELPER_LIB_FILE="/usr/local/lib/dystopian-tools/helper.sh"
-SSL_LIB_FILE="/usr/local/lib/dystopian-tools/ssl.sh"
-GPG_LIB_FILE="/usr/local/lib/dystopian-tools/gpg.sh"
-HOSTS_LIB_FILE="/usr/local/lib/dystopian-tools/hosts.sh"
-SECBOOT_LIB_FILE="/usr/local/lib/dystopian-tools/secboot.sh"
+VAR_LIB_FILE="/usr/lib/dystopian-tools/variables.sh"
+DB_LIB_FILE="/usr/lib/dystopian-tools/crypto-db.sh"
+HELPER_LIB_FILE="/usr/lib/dystopian-tools/helper.sh"
+SSL_LIB_FILE="/usr/lib/dystopian-tools/ssl.sh"
+GPG_LIB_FILE="/usr/lib/dystopian-tools/gpg.sh"
+HOSTS_LIB_FILE="/usr/lib/dystopian-tools/hosts.sh"
+SECBOOT_LIB_FILE="/usr/lib/dystopian-tools/secboot.sh"
 
 
 [ -f "$VAR_LIB_FILE" ] || VAR_LIB_FILE="$SCRIPT_DIR/../lib/variables.sh"
@@ -43,228 +45,192 @@ SECBOOT_LIB_FILE="/usr/local/lib/dystopian-tools/secboot.sh"
 #trap on_error_or_exit && exit 1 INT TERM HUP
 trap on_exit EXIT
 
+VERBOSE=0
+DEBUG=0
+QUIET=0
+RAND="$(od -An -N2 -i /dev/urandom | tr -d ' ' | head -c 4)"
+
 
 help() {
-    echo "Usage: $0 <command> [subcommand] [options]"
-    echo ""
-    echo "A POSIX shell script to manage SSL certificates and GPG keys with strong encryption"
-    echo "and Argon2id key derivation for people who always forget OpenSSL syntax."
-    echo ""
-    echo "SSL COMMANDS:"
-    echo "============="
-    echo ""
-    echo "  ssl create-ca                       Create a Root or Intermediate Certificate Authority"
-    echo "    --name <string>                     (Required) Common Name (CN) for the CA"
-    echo "    --outcert <file>                    (Optional) Output certificate file (default: ca.pem or intermediate-ca.pem)"
-    echo "    --outkey <file>                     (Optional) Output private key file (default: ca-key.pem or intermediate-ca-key.pem)"
-    echo "    --intermediate                      (Optional) Create intermediate CA instead of root CA"
-    echo "    --password <file|string>            (Optional) Password for private key encryption. Default: Argon2id"
-    echo "    --email <string>                    (Optional) Email address for certificate"
-    echo "    --country <string>                  (Optional) Country code (e.g., US, DE)"
-    echo "    --state <string>                    (Optional) State or province (ST)"
-    echo "    --locality <string>                 (Optional) City or locality (C)"
-    echo "    --org <string>                      (Optional) Organization name (O)"
-    echo "    --orgunit <string>                  (Optional) Organizational unit (OU)"
-    echo "    --days <number>                     (Optional) Certificate validity in days. Default: 3650"
-    echo ""
-    echo "  ssl create-key                      Create a private key with optional Argon2id encryption"
-    echo "    --out <file|stdout>                 (Optional) Output file. Default: $DC_KEY/key.pem"
-    echo "    --password <file|string>            (Optional) Password for encryption. Default: Argon2id"
-    echo "    --salt <file|string>                (Optional) Custom salt (auto-generated if not provided)"
-    echo ""
-    echo "  ssl create-csr                      Create a Certificate Signing Request"
-    echo "    --keyname|--name                    (Optional) Name of key in database"
-    echo "    --domains <string>                  (Required for server certs) Comma-separated domains/IPs"
-    echo "    --key <file>                        (Required) Private key file"
-    echo "    --cn <string>                       (Required for client certs) Common Name"
-    echo "    --out <file>                        (Optional) Output CSR file"
-    echo "    --server                            (Optional) Creates CSR for a server certificate. Default: false"
-    echo "    --client                            (Optional) Creates CSR for a client certificate. Default: true"
-    echo "    --pass <file|string>                (Optional) Private key password"
-    echo "    --email <string>                    (Optional) Email address"
-    echo "    --country <string>                  (Optional) Country code"
-    echo "    --state <string>                    (Optional) State or province"
-    echo "    --locality <string>                 (Optional) City or locality"
-    echo "    --org <string>                      (Optional) Organization name"
-    echo "    --orgunit <string>                  (Optional) Organizational unit"
-    echo "    --crldist <url>                     (Optional) CRL distribution point URL"
-    echo ""
-    echo "  ssl sign-csr                        Sign a Certificate Signing Request"
-    echo "    --name|--csrname                    (Optional) Name of CSR in database"
-    echo "    --csr <file>                        (Required) CSR file to sign"
-    echo "    --ca-cert <file>                    (Optional) CA certificate file. Default: defaultCA"
-    echo "    --ca-key <file>                     (Optional) CA private key file. Default: defaultCA"
-    echo "    --out <file>                        (Optional) Output certificate file"
-    echo "    --ca-pass <file|string>             (Optional) CA private key password"
-    echo "    --days <number>                     (Optional) Certificate validity in days"
-    echo "    --keep-csr                          (Optional) Keep CSR file after signing"
-    echo "    --keep-cfg                          (Optional) Keep configuration file after signing"
-    echo ""
-    echo "  ssl verify-cert                     Verify certificate signature and validity"
-    echo "    --cert <file>                       (Required) Certificate file to verify"
-    echo "    --ca <file>                         (Required) CA certificate for verification"
-    echo "    --chain <file>                      (Optional) Certificate chain file"
-    echo ""
-    echo "  ssl list-ca                         List Certificate Authorities"
-    echo "    --type <all|root|intermediate>      (Optional) CA type to list (default: all)"
-    echo "    --verbose                           (Optional) Show detailed information"
-    echo ""
-    echo "  ssl show-ca                         Show detailed CA information"
-    echo "    --index <index>                     (Required) CA index to show"
-    echo "    --type <root|intermediate>          (Optional) CA type (default: root)"
-    echo "    --cert                              (Optional) Show certificate details"
-    echo ""
-    echo "  ssl encrypt                         Encrypt data using certificate"
-    echo "    --cert <file>                       (Required) Certificate file for encryption"
-    echo "    --in <file>                         (Required) Input file to encrypt"
-    echo "    --out <file>                        (Required) Output encrypted file"
-    echo ""
-    echo "  ssl decrypt                         Decrypt data using private key"
-    echo "    --in <file|stdin>                   (Required) Input encrypted file"
-    echo "    --pass <file|string>                (Required) Passphrase to decrypt input file"
-    echo "    --key <file>                        (Optional) Private key file for decryption"
-    echo "    --out <file>                        (Optional) Output decrypted file. Default: stdout"
-    echo ""
-    echo "  ssl create-crl                      Create Certificate Revocation List"
-    echo "    --ca-key <file>                     (Optional) CA private key file. Default: defaultCA"
-    echo "    --ca-cert <file>                    (Optional) CA certificate file. Default: defaultCA"
-    echo "    --out <file>                        (Optional) Output CRL file. Default: $DC_CRL/<file>.crl"
-    echo "    --ca-pass <file|string>             (Optional) CA private key password"
-    echo "    --days <number>                     (Optional) CRL validity in days. Default: "
-    echo ""
-    echo "  ssl revoke-cert                     Revoke a certificate"
-    echo "    --cert <file>                       (Required) Certificate file to revoke"
-    echo "    --ca-key <file>                     (Required) CA private key file"
-    echo "    --ca-cert <file>                    (Required) CA certificate file"
-    echo "    --ca-pass <file|string>             (Optional) CA private key password"
-    echo "    --reason <reason>                   (Optional) Revocation reason"
-    echo ""
-    echo "  ssl create-config                   Create SSL configuration file for OpenSSL operations"
-    echo "    --type <rootca|intca|client|server> (Required) Certificate type to generate config for"
-    echo "    --domains-ips <string>              (Optional) Comma-separated domains/IPs (for server certs)"
-    echo "    --email <string>                    (Optional) Email address for certificate"
-    echo "    --country <string>                  (Optional) Country code (e.g., US, DE)"
-    echo "    --state <string>                    (Optional) State or province"
-    echo "    --locality <string>                 (Optional) City or locality"
-    echo "    --organization <string>             (Optional) Organization name"
-    echo "    --orgunit <string>                  (Optional) Organizational unit"
-    echo "    --common-name <string>              (Optional) Common Name (CN) for the certificate"
-    echo "    --crldistributionpoint <string>     (Optional) CRL distribution point URL"
-    echo ""
-    echo ""
-    echo "GPG COMMANDS:"
-    echo "============="
-    echo ""
-    echo "  gpg import                          Import GPG key to keyring"
-    echo "    --key <file>                        (Required) Key file to import"
-    echo "    --armor                             (Optional) Import ASCII armored key"
-    echo ""
-    echo "  gpg export                          Export GPG key from keyring"
-    echo "    --public <keyid>                    (Required) Export public key (or --private)"
-    echo "    --private <keyid>                   (Required) Export private key (or --public)"
-    echo "    --out <file>                        (Required) Output file"
-    echo "    --armor                             (Optional) Export in ASCII armor format"
-    echo ""
-    echo "  gpg genpair                         Generate GPG key pair"
-    echo "    --name <name>                       (Required) Real name for key"
-    echo "    --email <email>                     (Required) Email address for key"
-    echo "    --comment <comment>                 (Optional) Comment for key"
-    echo "    --keysize <bits>                    (Optional) Key size in bits (default: 4096)"
-    echo "    --expire <date>                     (Optional) Expiration date (0 = never)"
-    echo ""
-    echo "  gpg addsub                          Add subkey to Primary Key"
+    cat <<EOF
+Usage: $0 <command> [subcommand] [options]
 
-    echo ""
-    echo ""
-    echo "SECUREBOOT COMMANDS:"
-    echo "============="
-    echo ""
-    echo "  secboot init                        Initialize secureboot keys (either active ones, or creates new ones)"
-    echo ""
-    echo "  secboot verify                      Verify all Kernel Images in /boot/efi/EFI/Linux are signed"
-    echo ""
-    echo ""
-    echo "MAINTENANCE COMMANDS:"
-    echo "===================="
-    echo ""
-    echo "  show-index                      Show SSL index information"
-    echo "    --keys                              (Optional) Show key entries"
-    echo "    --ca                                (Optional) Show CA entries"
-    echo "    --verbose                           (Optional) Show detailed information"
-    echo "    --json                              (Optional) Output raw JSON index"
-    echo ""
-    echo "  cleanup                             Clean up dystopian-crypto files and index"
-    echo "    --index <index>                     (Optional) Clean up specific index entry"
-    echo "    --orphaned                          (Optional) Remove orphaned files not in index"
-    echo "    --backups                           (Optional) Remove backup files"
-    echo "    --dry-run                           (Optional) Show what would be cleaned without doing it"
-    echo ""
-    echo "  backup                              Create backup of dystopian-crypto directory"
-    echo "    --out <file>                        (Optional) Backup output file (default: /tmp/dystopian-crypto-backup-YYYYMMDD_HHMMSS.tar)"
-    echo "    --compress                          (Optional) Compress backup with gzip"
-    echo "    --exclude-keys                      (Optional) Exclude private keys from backup"
-    echo ""
-    echo "  restore                             Restore dystopian-crypto directory from backup"
-    echo "    --from <file>                       (Required) Backup file to restore from"
-    echo "    --force                             (Optional) Force restore without confirmation"
-    echo ""
-    echo "  set-default-ca                      Set default Certificate Authority"
-    echo "    --index <index>                     (Required) CA index to set as default"
-    echo "    --type <root|intermediate>          (Optional) CA type (default: root)"
-    echo ""
-    echo "  install                             Creates keys and certs and Integrates them in corresponding environment"
-    echo "    --docker-client-cert                 "
-    echo "    --docker-server-cert                 "
-    echo ""
-    echo ""
-    echo "OTHER COMMANDS:"
-    echo "==============="
-    echo "  -v | --verbose                      Show verbose status informations"
-    echo "  -q | --quiet                        No output informations"
-    echo "  --user <name>                       Give group ownership to user"
-    echo "  --debug                             Show debug status informations"
-    echo "  version                             Show version information"
-    echo "  help                                Show this help message"
-    echo ""
-    echo ""
-    echo "EXAMPLES:"
-    echo "========="
-    echo ""
-    echo "  # Create a root CA with encrypted private key"
-    echo "  $0 ssl create-ca --name \"My Root CA\" --password mypassword"
-    echo ""
-    echo "  # Create a server certificate CSR"
-    echo "  $0 ssl create-csr --domains \"example.com,192.168.1.100\" --type server --key my.key --cn example.com"
-    echo ""
-    echo "  # List all Certificate Authorities"
-    echo "  $0 ssl list-ca --verbose"
-    echo ""
-    echo "  # Create encrypted backup"
-    echo "  $0 backup --compress --out /secure/dystopian-crypto-backup.tar.gz"
-    echo ""
-    echo ""
-    echo "SSL FILES:"
-    echo "  Configuration directory: $DC_DIR/"
-    echo "  CA certificates:         $DC_CA/"
-    echo "  CA private keys:         $DC_CAKEY/"
-    echo "  Certificates:            $DC_CERT/"
-    echo "  Private keys:            $DC_KEY/"
-    echo "  CRL files:               $DC_CRL/"
-    echo ""
-    echo "GPG FILES:"
-    echo "  GPG Home Directory:      $DC_GNUPG/"
-    echo ""
-    echo "DATABASE:"
-    echo "  SSL/GnuPG database file: $DC_DB"
-    echo ""
-    echo ""
-    echo "NOTES:"
-    echo "  • This script requires root privileges"
-    echo "  • SSL private keys use secp384r1 elliptic curve (384-bit)"
-    echo "  • SSL Certificates use SHA-384 for signatures"
-    echo "  • Password-protected keys use Argon2id key derivation, fallback to pbkdf2"
-    echo "  • All operations are logged in the JSON database for tracking"
-    echo "  • Use 'show-index --json' to see the complete configuration"
+Description:
+  A POSIX shell script to manage SSL certificates and GPG keys with strong encryption
+  and Argon2id key derivation for people who always forget OpenSSL syntax.
+
+
+SSL Commands:
+
+  ssl create-ca                       Create a Root or Intermediate Certificate Authority
+    --name <string>                     (Required) Common Name (CN) for the CA
+    --outcert <file>                    (Optional) Output certificate file (default: ca.pem or intermediate-ca.pem)
+    --outkey <file>                     (Optional) Output private key file (default: ca-key.pem or intermediate-ca-key.pem)
+    --intermediate                      (Optional) Create intermediate CA instead of root CA
+    --password <file|string>            (Optional) Password for private key encryption. Default: Argon2id
+    --email <string>                    (Optional) Email address for certificate
+    --country <string>                  (Optional) Country code (e.g., US, DE)
+    --state <string>                    (Optional) State or province (ST)
+    --locality <string>                 (Optional) City or locality (C)
+    --org <string>                      (Optional) Organization name (O)
+    --orgunit <string>                  (Optional) Organizational unit (OU)
+    --days <number>                     (Optional) Certificate validity in days. Default: 3650
+
+  ssl create-key                      Create a private key with optional Argon2id encryption
+    --out <file|stdout>                 (Optional) Output file. Default: $DC_KEY/key.pem
+    --password <file|string>            (Optional) Password for encryption. Default: Argon2id
+    --salt <file|string>                (Optional) Custom salt (auto-generated if not provided)
+
+  ssl create-csr                      Create a Certificate Signing Request
+    --keyname|--name                    (Optional) Name of key in database
+    --domains <string>                  (Required for server certs) Comma-separated domains/IPs
+    --key <file>                        (Required) Private key file
+    --cn <string>                       (Required for client certs) Common Name
+    --out <file>                        (Optional) Output CSR file
+    --server                            (Optional) Creates CSR for a server certificate. Default: false
+    --client                            (Optional) Creates CSR for a client certificate. Default: true
+    --pass <file|string>                (Optional) Private key password
+    --email <string>                    (Optional) Email address
+    --country <string>                  (Optional) Country code
+    --state <string>                    (Optional) State or province
+    --locality <string>                 (Optional) City or locality
+    --org <string>                      (Optional) Organization name
+    --orgunit <string>                  (Optional) Organizational unit
+    --crldist <url>                     (Optional) CRL distribution point URL
+
+  ssl sign-csr                        Sign a Certificate Signing Request
+    --name|--csrname                    (Optional) Name of CSR in database
+    --csr <file>                        (Required) CSR file to sign
+    --ca-cert <file>                    (Optional) CA certificate file. Default: defaultCA
+    --ca-key <file>                     (Optional) CA private key file. Default: defaultCA
+    --out <file>                        (Optional) Output certificate file
+    --ca-pass <file|string>             (Optional) CA private key password
+    --days <number>                     (Optional) Certificate validity in days
+    --keep-csr                          (Optional) Keep CSR file after signing
+    --keep-cfg                          (Optional) Keep configuration file after signing
+
+  ssl list-ca                         List Certificate Authorities
+    --type <all|root|intermediate>      (Optional) CA type to list (default: all)
+    --verbose                           (Optional) Show detailed information
+
+  ssl show-ca                         Show detailed CA information
+    --index <index>                     (Required) CA index to show
+    --type <root|intermediate>          (Optional) CA type (default: root)
+    --cert                              (Optional) Show certificate details
+
+  ssl create-config                   Create SSL configuration file for OpenSSL operations
+    --type <rootca|intca|client|server> (Required) Certificate type to generate config for
+    --domains-ips <string>              (Optional) Comma-separated domains/IPs (for server certs)
+    --email <string>                    (Optional) Email address for certificate
+    --country <string>                  (Optional) Country code (e.g., US, DE)
+    --state <string>                    (Optional) State or province
+    --locality <string>                 (Optional) City or locality
+    --organization <string>             (Optional) Organization name
+    --orgunit <string>                  (Optional) Organizational unit
+    --common-name <string>              (Optional) Common Name (CN) for the certificate
+    --crldistributionpoint <string>     (Optional) CRL distribution point URL
+
+
+GPG Commands:
+
+  gpg import                          Import GPG key to keyring
+    --key <file>                        (Required) Key file to import
+    --armor                             (Optional) Import ASCII armored key
+
+  gpg export                          Export GPG key from keyring
+    --public <keyid>                    (Required) Export public key (or --private)
+    --private <keyid>                   (Required) Export private key (or --public)
+    --out <file>                        (Required) Output file
+    --armor                             (Optional) Export in ASCII armor format
+
+  gpg genpair                         Generate GPG key pair
+    --name <name>                       (Required) Real name for key
+    --email <email>                     (Required) Email address for key
+    --comment <comment>                 (Optional) Comment for key
+    --keysize <bits>                    (Optional) Key size in bits (default: 4096)
+    --expire <date>                     (Optional) Expiration date (0 = never)
+
+  gpg addsub                          Add subkey to Primary Key
+
+
+Maintenance Commands:
+  show-index                      Show SSL index information
+    --keys                              (Optional) Show key entries
+    --ca                                (Optional) Show CA entries
+    --verbose                           (Optional) Show detailed information
+    --json                              (Optional) Output raw JSON index
+
+  cleanup                             Clean up dystopian-crypto files and index
+    --index <index>                     (Optional) Clean up specific index entry
+    --orphaned                          (Optional) Remove orphaned files not in index
+    --backups                           (Optional) Remove backup files
+    --dry-run                           (Optional) Show what would be cleaned without doing it
+
+  backup                              Create backup of dystopian-crypto directory
+    --out <file>                        (Optional) Backup output file (default: /tmp/dystopian-crypto-backup-YYYYMMDD_HHMMSS.tar)
+    --compress                          (Optional) Compress backup with gzip
+    --exclude-keys                      (Optional) Exclude private keys from backup
+
+  restore                             Restore dystopian-crypto directory from backup
+    --from <file>                       (Required) Backup file to restore from
+    --force                             (Optional) Force restore without confirmation
+
+  set-default-ca                      Set default Certificate Authority
+    --index <index>                     (Required) CA index to set as default
+    --type <root|intermediate>          (Optional) CA type (default: root)
+
+  install                             Creates keys and certs and Integrates them in corresponding environment
+    --docker-client-cert
+    --docker-server-cert
+
+
+Other Commands:
+  -v | --verbose                      Show verbose status informations
+  -q | --quiet                        No output informations
+  --user <name>                       Give group ownership to user
+  --debug                             Show debug status informations
+  version                             Show version information
+  help                                Show this help message
+
+
+Examples:
+  # Create a root CA with encrypted private key
+  $0 ssl create-ca --name "My Root CA" --password mypassword
+
+  # Create a server certificate CSR
+  $0 ssl create-csr --domains "example.com,192.168.1.100" --type server --key my.key --cn example.com
+
+  # List all Certificate Authorities
+  $0 ssl list-ca --verbose
+
+  # Create encrypted backup
+  $0 backup --compress --out /secure/dystopian-crypto-backup.tar.gz
+
+
+SSL Files:
+  Configuration directory: $DC_DIR/
+  CA certificates:         $DC_CA/
+  CA private keys:         $DC_CAKEY/
+  Certificates:            $DC_CERT/
+  Private keys:            $DC_KEY/
+  CRL files:               $DC_CRL/
+
+GPG Files:
+  GPG Home Directory:      $DC_GNUPG/
+
+Database:
+  SSL/GnuPG database file: $DC_DB
+
+
+Notes:
+  • This script requires root privileges
+  • SSL private keys use secp384r1 elliptic curve (384-bit)
+  • SSL Certificates use SHA-384 for signatures
+  • Password-protected keys use Argon2id key derivation, fallback to pbkdf2
+  • All operations are logged in the JSON database for tracking
+  • Use 'show-index --json' to see the complete configuration
+
+EOF
 }
 
 main() {
@@ -278,7 +244,7 @@ main() {
             --verbose|-v) VERBOSE=1; shift;;
             --quiet|-q) DEBUG=0 VERBOSE=0 QUIET=1; shift;;
             --debug) DEBUG=1; VERBOSE=1; shift;;
-            --user|-u) DC_USER="$2"; shift 2;;
+            --user|-u) DYSTOPIAN_USER="$2"; shift 2;;
             *)
                 # Append argument to new_args string, preserving spaces
                 if [ -z "$new_args" ]; then

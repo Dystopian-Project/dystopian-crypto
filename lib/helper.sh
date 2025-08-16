@@ -427,7 +427,7 @@ install_docker_cert() {
     echod "      client: $client"
     echod "      server: $server"
     echod "  import_dir: $import_dir"
-    echod "        user: $DC_USER"
+    echod "        user: $DYSTOPIAN_USER"
 
     if [ -d "$import_dir" ]; then
         pems=$(find "$import_dir" -type f -name "*.pem")
@@ -488,7 +488,7 @@ install_docker_cert() {
 
     if [ "$client" = "true" ]; then
         echov "Installing Docker server certificate"
-        #home_dir="$(eval echo "~${DC_USER}")"
+        #home_dir="$(eval echo "~${DYSTOPIAN_USER}")"
         user_dir="$homedir/.docker"
 
         if [ ! -d "$user_dir" ]; then
@@ -579,14 +579,14 @@ set_permissions_and_owner() {
         echoe "Failed to set permissions $perm on $1"
         return 1
     fi
-    if ! chown "root:${DC_USER}" "$1" 2>/dev/null; then
-        echoe "Failed to set owner root:${DC_USER} on $1"
+    if ! chown "root:${DYSTOPIAN_USER}" "$1" 2>/dev/null; then
+        echoe "Failed to set owner root:${DYSTOPIAN_USER} on $1"
         return 1
     fi
     if [ "$1" != "$DC_DB" ]; then
-        echov "Successfully set perm ($perm) and owner 'root:$DC_USER' on $1"
+        echov "Successfully set perm ($perm) and owner 'root:$DYSTOPIAN_USER' on $1"
     else
-        echod "Successfully set perm ($perm) and owner 'root:$DC_USER' on $1"
+        echod "Successfully set perm ($perm) and owner 'root:$DYSTOPIAN_USER' on $1"
     fi
     return 0
 }
@@ -726,7 +726,7 @@ get_index_from_filename() {
 
 _cleanup() {
     echod "Cleaning up generated files..."
-    for file in $DC_CLEANUP_FILES; do
+    for file in $DYSTOPIAN_CLEANUP_FILES; do
         rm -rf -- "$file"
     done
     echod "done."
@@ -735,7 +735,7 @@ _cleanup() {
 
 set_perms_trap() {
     echod "Setting permissions and ownership..."
-    for file in $DC_PERM_FILES; do
+    for file in $DYSTOPIAN_PERM_FILES; do
         set_permissions_and_owner "$file" 440
     done
     echod "done."
@@ -1110,6 +1110,30 @@ check_secureboot_status() {
         echoe "Failed checking secureboot status"
         return 1
     fi
-
     return 0
+}
+
+backup_targz() {
+  path="${1:+$(absolutepath "$1")}"
+  [ -d "$path" ] || return 0
+  dirname="$(echo "$path" | awk -F'/' '{print $NF}')"
+  parent="${path%"$dirname"}"
+  [ -d "$parent" ] || return 0
+  # choose a timestamped name (YYYYmmdd_HHMMSS) and avoid collisions by adding a counter
+  ts="$(date +%Y%m%d_%H%M%S)"
+  outfile="${dirname}.bkp.${ts}.tar.gz"
+  cnt=0
+  while [ -e "$outfile" ]; do
+    cnt=$((cnt + 1))
+    outfile="${dirname}.bkp.${ts}.${cnt}.tar.gz"
+  done
+  # create tarball from parent so archive contains base/...
+  if tar -C "$parent" -czf "$outfile" "$dirname" 2>/dev/null; then
+    printf 'Created backup: %s\n' "$outfile"
+  else
+    printf 'Failed to create backup: %s\n' "$outfile" >&2
+    rm -f -- "$outfile" 2>/dev/null || true
+    return 1
+  fi
+  return 0
 }
