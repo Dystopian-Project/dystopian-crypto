@@ -2038,10 +2038,10 @@ import_ssl() {
             fi
             if [ "$copy_files" = "true" ]; then
                 cp -f "$filepath" "$dirpath/$filename"
-                echov "Copied file $filepath into dcrypto directory: $dirpath"
+                echov "Copied file $filepath into dystopian-crypto directory: $dirpath"
             elif [ "$move_files" = "true" ]; then
                 mv "$filepath" "$dirpath/$filename"
-                echov "Moved file $filepath into dcrypto directory: $dirpath"
+                echov "Moved file $filepath into dystopian-crypto directory: $dirpath"
             fi
 
             if [ -n "$ftype" ] && [ -n "$ca_type" ] && [ -n "$ca_index" ]; then
@@ -2093,6 +2093,6 @@ set_as_default_CA() {
         return 1
     }
 
-    echos "Setting $index as dcrypto's .ssl.defaultCA succesful"
+    echos "Setting $index as dystopian-crypto's .ssl.defaultCA succesful"
     return 0
 }

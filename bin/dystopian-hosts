@@ -1,0 +1,103 @@
+#!/bin/sh
+
+# shellcheck shell=sh
+# shellcheck disable=SC2001
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+VAR_LIB_FILE="/usr/local/lib/dystopian-tools/variables.sh"
+DB_LIB_FILE="/usr/local/lib/dystopian-tools/hosts-db.sh"
+HELPER_LIB_FILE="/usr/local/lib/dystopian-tools/helper.sh"
+SSL_LIB_FILE="/usr/local/lib/dystopian-tools/ssl.sh"
+GPG_LIB_FILE="/usr/local/lib/dystopian-tools/gpg.sh"
+SECBOOT_LIB_FILE="/usr/local/lib/dystopian-tools/secboot.sh"
+HOSTS_LIB_FILE="/usr/local/lib/dystopian-tools/hosts.sh"
+
+
+[ -f "$VAR_LIB_FILE" ] || VAR_LIB_FILE="$SCRIPT_DIR/../lib/variables.sh"
+[ -f "$DB_LIB_FILE" ] || DB_LIB_FILE="$SCRIPT_DIR/../lib/hosts-db.sh"
+[ -f "$HELPER_LIB_FILE" ] || HELPER_LIB_FILE="$SCRIPT_DIR/../lib/helper.sh"
+[ -f "$SSL_LIB_FILE" ] || SSL_LIB_FILE="$SCRIPT_DIR/../lib/ssl.sh"
+[ -f "$GPG_LIB_FILE" ] || GPG_LIB_FILE="$SCRIPT_DIR/../lib/gpg.sh"
+[ -f "$SECBOOT_LIB_FILE" ] || SECBOOT_LIB_FILE="$SCRIPT_DIR/../lib/secboot.sh"
+[ -f "$HOSTS_LIB_FILE" ] || HOSTS_LIB_FILE="$SCRIPT_DIR/../lib/hosts.sh"
+
+
+# Source library files
+# shellcheck source=../lib/variables.sh
+[ -f "$VAR_LIB_FILE" ] && . "$VAR_LIB_FILE"
+# shellcheck source=../lib/hosts-db.sh
+[ -f "$DB_LIB_FILE" ] && . "$DB_LIB_FILE"
+# shellcheck source=../lib/helper.sh
+[ -f "$HELPER_LIB_FILE" ] && . "$HELPER_LIB_FILE"
+# shellcheck source=../lib/ssl.sh
+[ -f "$SSL_LIB_FILE" ] && . "$SSL_LIB_FILE"
+# shellcheck source=../lib/gpg.sh
+[ -f "$GPG_LIB_FILE" ] && . "$GPG_LIB_FILE"
+#shellcheck source=../lib/secboot.sh
+[ -f "$SECBOOT_LIB_FILE" ] && . "$SECBOOT_LIB_FILE"
+#shellcheck source=../lib/hosts.sh
+[ -f "$HOSTS_LIB_FILE" ] && . "$HOSTS_LIB_FILE"
+#trap on_error_or_exit && exit 1 INT TERM HUP
+trap on_exit EXIT
+
+help() {
+    echo "Usage: $0 <command> [subcommand] [options]"
+    echo ""
+    echo "A POSIX shell script to manage SSL certificates and GPG keys with strong encryption"
+    echo "and Argon2id key derivation for people who always forget OpenSSL syntax."
+    echo ""
+    echo "COMMANDS:"
+    echo "============="
+    echo ""
+    echo "  sync                     Synchronizes keys with the other hosts"
+    echo "    --host                   (Optional) Synchronizes dystopian-tools with another host"
+    echo "    --all                    (Optional) Synchronizes data among all hosts in database"
+    echo ""
+}
+
+main() {
+    # Check verbose
+    new_args=""
+
+    # Preprocess arguments to check for --verbose, -v, or --debug
+    while [ $# -gt 0 ]; do
+        # shellcheck disable=SC2034
+        case "$1" in
+            --verbose|-v) VERBOSE=1; shift;;
+            --quiet|-q) DEBUG=0 VERBOSE=0 QUIET=1; shift;;
+            --debug) DEBUG=1; VERBOSE=1; shift;;
+            --user|-u) DC_USER="$2"; shift 2;;
+            *)
+                # Append argument to new_args string, preserving spaces
+                if [ -z "$new_args" ]; then
+                    new_args="$1"
+                else
+                    new_args="$new_args $1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    # Restore the modified argument list
+    eval set -- "$new_args"
+
+    case "$1" in
+        sync)
+            shift
+            host="" all=""
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --host|-h) host="$2"; shift 2;;
+                    --all|-a) all="true"; shift;;
+                    -help|--help) shorthelp "sync"; exit 0;;
+                    *) echoe "Unknown option: $1"; shorthelp "sync"; exit 1;;
+                esac
+            done
+            host_sync ""
+            ;;
+        -h|--help|-help) help; exit 0;;
+        *) echoe "Unknown command: $1"; help; exit 1;;
+    esac
+}
+
+main "$@"

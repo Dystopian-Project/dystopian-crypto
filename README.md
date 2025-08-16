@@ -1,4 +1,4 @@
-# DCrypto Shell Script
+# dystopian-crypto Shell Script
 
 ## TODO:
 
@@ -146,7 +146,7 @@ A POSIX-compliant shell script to manage SSL certificates and GPG keys with stro
 - [Notes](#notes)
 
 ## Overview
-DCrypto is a POSIX shell script that simplifies the management of SSL certificates and GPG keys. It uses strong encryption with Argon2id key derivation to secure private keys and provides a user-friendly interface to handle complex OpenSSL and GPG operations.
+dystopian-crypto is a POSIX shell script that simplifies the management of SSL certificates and GPG keys. It uses strong encryption with Argon2id key derivation to secure private keys and provides a user-friendly interface to handle complex OpenSSL and GPG operations.
 
 ## Usage
 
@@ -216,7 +216,7 @@ Show SSL index information.
 - `--json`: (Optional) Output raw JSON index
 
 ### cleanup
-Clean up DCrypto files and index.
+Clean up dystopian-crypto files and index.
 
 - `--index <index>`: (Optional) Clean up specific index entry
 - `--orphaned`: (Optional) Remove orphaned files not in index
@@ -224,14 +224,14 @@ Clean up DCrypto files and index.
 - `--dry-run`: (Optional) Show what would be cleaned without doing it
 
 ### backup
-Create backup of DCrypto directory.
+Create backup of dystopian-crypto directory.
 
-- `--out <file>`: (Optional) Backup output file (default: `/tmp/dcrypto-backup-YYYYMMDD_HHMMSS.tar`)
+- `--out <file>`: (Optional) Backup output file (default: `/tmp/dystopian-crypto-backup-YYYYMMDD_HHMMSS.tar`)
 - `--compress`: (Optional) Compress backup with gzip
 - `--exclude-keys`: (Optional) Exclude private keys from backup
 
 ### restore
-Restore DCrypto directory from backup.
+Restore dystopian-crypto directory from backup.
 
 - `--from <file>`: (Required) Backup file to restore from
 - `--force`: (Optional) Force restore without confirmation

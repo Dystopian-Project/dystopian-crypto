@@ -1,22 +1,5 @@
 {
-  "ssl": {
-    "defaultCA": "",
-    "encrypted": [],
-    "keys": {},
-    "ca": {
-      "root": {},
-      "intermediate": {}
-    }
-  },
-
-  "gpg": {
-    "defaultSign": "",
-    "defaultEncrypt": "",
-    "defaultAuth": "",
-    "keys": {}
-  },
-  "sb": {
-    "UUID": "",
+  "UUID": "",
     "MOK": {
       "cert": {
         "path": "",
@@ -57,5 +40,4 @@
         "hash": ""
       }
     }
-  }
 }

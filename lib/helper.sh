@@ -104,11 +104,11 @@ reset_dcrypto() {
                 echoe "Problem backing up keys and config"
                 exit 1
             }
-            echos "Backup successful @ /etc/dcrypto.bkp"
+            echos "Backup successful @ /etc/dystopian-crypto.bkp"
         fi
         if [ -n "$ssl" ] && [ "$ssl" = "true" ]; then
             rm -rf -- "${DC_CA}" "{$DC_CERT}" "${DC_CRL}" 2>/dev/null || {
-                echoe "Problem resetting dcrypto ssl"
+                echoe "Problem resetting dystopian-crypto ssl"
                 exit 1
             }
             mkdir -p "$DC_CAKEY" "$DC_KEY" "$DC_CRL" || {
@@ -119,11 +119,11 @@ reset_dcrypto() {
             set_permissions_and_owner "$DC_KEY" 700
             set_permissions_and_owner "$DC_CAKEY" 700
             reset_ssl_index
-            echos "Reset of dcrypto SSL successful"
+            echos "Reset of dystopian-crypto SSL successful"
         fi
         if [ -n "$gpg" ] && [ "$gpg" = "true" ]; then
             rm -rf -- "${DC_GNUPG}" 2>/dev/null || {
-              echoe "Problem resetting dcrypto gpg"
+              echoe "Problem resetting dystopian-crypto gpg"
               exit 1
             }
             mkdir -p "$DC_GNUPG" || {
@@ -132,10 +132,10 @@ reset_dcrypto() {
             }
             set_permissions_and_owner "$DC_GNUPG" 700
             reset_gpg_index
-            echos "Reset of dcrypto GPG successful"
+            echos "Reset of dystopian-crypto GPG successful"
         fi
     else
-      echoi "Exiting dcrypto. No harm was done."
+      echoi "Exiting dystopian-crypto. No harm was done."
       exit 0
     fi
 }
@@ -151,7 +151,7 @@ show_index() {
         return 0
     fi
 
-    echoi "DCrypto Index Summary"
+    echoi "dystopian-crypto Index Summary"
     echo "  ===================="
     echo ""
 
@@ -205,7 +205,7 @@ cleanup_dcrypto_files() {
     echod "               DC_DIR: $DC_DIR"
     echod "                DC_DB: $DC_DB"
 
-    echoi "DCrypto Cleanup${cleanup_dry_run:+$([ "$cleanup_dry_run" = "true" ] && echo "DRY RUN")}"
+    echoi "dystopian-crypto Cleanup${cleanup_dry_run:+$([ "$cleanup_dry_run" = "true" ] && echo "DRY RUN")}"
     echoi "=============="
 
     # Clean specific index
@@ -368,9 +368,9 @@ cleanup_dcrypto_files() {
 
     # Display cleanup completion message
     if [ "$cleanup_dry_run" = "true" ]; then
-        echos "DCrypto cleanup completed successfully (DRY RUN)"
+        echos "dystopian-crypto cleanup completed successfully (DRY RUN)"
     else
-        echos "DCrypto cleanup completed successfully"
+        echos "dystopian-crypto cleanup completed successfully"
     fi
     return 0
 }
