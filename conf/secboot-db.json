@@ -1,43 +1,54 @@
 {
-  "UUID": "",
-    "MOK": {
-      "cert": {
-        "path": "",
-        "hash": ""
-      },
-      "key": {
-        "path": "",
-        "hash": ""
-      }
+  "GUID": "",
+  "MOK": {
+    "GUID": "",
+    "cert": {
+      "path": "",
+      "hash": ""
     },
-    "PK": {
-      "cert": {
-        "path": "",
-        "hash": ""
-      },
-      "key": {
-        "path": "",
-        "hash": ""
-      }
-    },
-    "KEK": {
-      "cert": {
-        "path": "",
-        "hash": ""
-      },
-      "key": {
-        "path": "",
-        "hash": ""
-      }
-    },
-    "db": {
-      "cert": {
-        "path": "",
-        "hash": ""
-      },
-      "key": {
-        "path": "",
-        "hash": ""
-      }
+    "key": {
+      "path": "",
+      "hash": ""
     }
+  },
+  "PK": {
+    "GUID": "",
+    "cert": {
+      "path": "",
+      "hash": ""
+    },
+    "key": {
+      "path": "",
+      "hash": ""
+    }
+  },
+  "KEK": {
+    "GUID": "",
+    "cert": {
+      "path": "",
+      "hash": ""
+    },
+    "key": {
+      "path": "",
+      "hash": ""
+    }
+  },
+  "db": {
+    "GUID": "",
+    "cert": {
+      "path": "",
+      "hash": ""
+    },
+    "key": {
+      "path": "",
+      "hash": ""
+    }
+  },
+  "Microsoft": {
+    "GUID": "77fa9abd-0359-4d32-bd60-28f4e78f784b",
+    "urls": {
+      "PK": "https://github.com/microsoft/secureboot_objects/raw/refs/heads/main/PreSignedObjects/PK/Certificate/WindowsOEMDevicesPK.der",
+      "KEK_CA2023": "https://github.com/microsoft/secureboot_objects/raw/refs/heads/main/PreSignedObjects/KEK/Certificates/microsoft%20corporation%20kek%202k%20ca%202023.der"
+    }
+  }
 }

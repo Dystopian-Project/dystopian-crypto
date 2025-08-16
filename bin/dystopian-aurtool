@@ -3,11 +3,6 @@
 # shellcheck disable=SC2001
 # shellcheck disable=SC2034
 
-if [ "$(id -u)" -ne 0 ]; then
-    echo "User must be root"
-    exit 1
-fi
-
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 VAR_LIB_FILE="/usr/lib/dystopian-tools/variables.sh"
 DB_LIB_FILE="/usr/lib/dystopian-tools/secboot-db.sh"
@@ -45,68 +40,64 @@ HOSTS_LIB_FILE="/usr/lib/dystopian-tools/hosts.sh"
 #trap on_error_or_exit && exit 1 INT TERM HUP
 trap on_exit EXIT
 
+VERBOSE=0
+DEBUG=0
+QUIET=0
+RAND="$(od -An -N2 -i /dev/urandom | tr -d ' ' | head -c 4)"
+
+
 help() {
     cat <<EOF
 Usage: $0 <command> [options]
 
 Description:
-  Manage Secure Boot setup, key enrollment, and status reporting.
+  Manage AUR-related versioning and packaging tasks.
 
 
 Commands:
 
-  init
-    --compat         Create keys using broadly compatible settings. (Default: false)
-    --tpm            Use TPM-backed keys if supported. (Default: false)
+  version
+    --getversion    Show the current package version.
+    --bumprelease   Bump the package release number.
+    --package       Build and package the project.
 
-  enroll
-    --ms             Fetch and enroll Microsoft-provided certificates where applicable.
-    --mok            Enroll Machine Owner Key (MOK).
-    --pk             Enroll Platform Key (PK).
-    --kek            Enroll Key Exchange Key (KEK).
-    --db             Enroll allowed database (db) keys/certs.
 
-  status
-    Show current Secure Boot state and enrolled keys.
+Maintenance Commands:
+
+
 
 Other Commands:
   -v | --verbose                      Show verbose status informations
   -q | --quiet                        No output informations
-  --user <name>                       Give group ownership to user
   --debug                             Show debug status informations
   version                             Show version information
   help                                Show this help message
 
 
 Examples:
-  # Initialize Secure Boot with broadly compatible keys
-  $0 init --compat
+  # Show current version
+  $0 version --getversion
 
-  # Enroll Microsoft and db certificates
-  $0 enroll --ms --db
+  # Bump the package release number
+  $0 version --bumprelease
 
-  # Show current Secure Boot status
-  $0 status
+  # Build and package the project
+  $0 version --package
 
 Files:
-  Secure Boot directory: $DS_DIR/
-  Microsoft objects dir: $DC_MS_DIR/
+  System directory:      $DA_DIR/
+  User config directory: $DA_HOME/
 
 Database:
-  Secure Boot database file: $DS_DB
+  AUR tool database file: ${DA_DB:-N/A}
 
 Notes:
-  • Requires root privileges for key creation and enrollment
-  • May use efitools, openssl, bootctl, and system firmware variables
-  • Key enrollment modifies UEFI variables; ensure you have backups and recovery options
+  • Version and packaging tasks may interact with PKGBUILD and VCS metadata
+  • Use --verbose/--debug for detailed build and versioning logs
 
 EOF
 }
 
-VERBOSE=0
-DEBUG=0
-QUIET=0
-RAND="$(od -An -N2 -i /dev/urandom | tr -d ' ' | head -c 4)"
 
 
 main() {
@@ -135,15 +126,13 @@ main() {
     eval set -- "$new_args"
 
     case "$1" in
-        init)
+        version)
             shift
-            compat="" tpm=""
+            bump=""
             while [ $# -gt 0 ]; do
                 case "$1" in
-                    --compat|--compatibility|-c) compat="true"; shift;;
-                    --tpm|-tpm|-t) tpm="true"; shift;;
-                    -help|--help|-h) shorthelp "init"; exit 0;;
-                    *) echoe "Unknown option: $1"; shorthelp "init"; exit 1;;
+                    -help|--help) shorthelp "version"; exit 0;;
+                    *) echoe "Unknown option: $1"; shorthelp "version"; exit 1;;
                 esac
             done
             host_sync ""
