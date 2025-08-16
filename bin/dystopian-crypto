@@ -8,25 +8,27 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-VAR_LIB_FILE="/usr/local/lib/dcrypto/variables.sh"
-DB_LIB_FILE="/usr/local/lib/dcrypto/db.sh"
-HELPER_LIB_FILE="/usr/local/lib/dcrypto/helper.sh"
-SSL_LIB_FILE="/usr/local/lib/dcrypto/ssl.sh"
-GPG_LIB_FILE="/usr/local/lib/dcrypto/gpg.sh"
-SECBOOT_LIB_FILE="/usr/local/lib/dcrypto/secboot.sh"
+VAR_LIB_FILE="/usr/local/lib/dystopian-tools/variables.sh"
+DB_LIB_FILE="/usr/local/lib/dystopian-tools/crypto-db.sh"
+HELPER_LIB_FILE="/usr/local/lib/dystopian-tools/helper.sh"
+SSL_LIB_FILE="/usr/local/lib/dystopian-tools/ssl.sh"
+GPG_LIB_FILE="/usr/local/lib/dystopian-tools/gpg.sh"
+HOSTS_LIB_FILE="/usr/local/lib/dystopian-tools/hosts.sh"
+SECBOOT_LIB_FILE="/usr/local/lib/dystopian-tools/secboot.sh"
 
 
 [ -f "$VAR_LIB_FILE" ] || VAR_LIB_FILE="$SCRIPT_DIR/../lib/variables.sh"
-[ -f "$DB_LIB_FILE" ] || DB_LIB_FILE="$SCRIPT_DIR/../lib/db.sh"
+[ -f "$DB_LIB_FILE" ] || DB_LIB_FILE="$SCRIPT_DIR/../lib/crypto-db.sh"
 [ -f "$HELPER_LIB_FILE" ] || HELPER_LIB_FILE="$SCRIPT_DIR/../lib/helper.sh"
 [ -f "$SSL_LIB_FILE" ] || SSL_LIB_FILE="$SCRIPT_DIR/../lib/ssl.sh"
 [ -f "$GPG_LIB_FILE" ] || GPG_LIB_FILE="$SCRIPT_DIR/../lib/gpg.sh"
 [ -f "$SECBOOT_LIB_FILE" ] || SECBOOT_LIB_FILE="$SCRIPT_DIR/../lib/secboot.sh"
+[ -f "$HOSTS_LIB_FILE" ] || HOSTS_LIB_FILE="$SCRIPT_DIR/../lib/hosts.sh"
 
 # Source library files
 # shellcheck source=../lib/variables.sh
 [ -f "$VAR_LIB_FILE" ] && . "$VAR_LIB_FILE"
-# shellcheck source=../lib/db.sh
+# shellcheck source=../lib/crypto-db.sh
 [ -f "$DB_LIB_FILE" ] && . "$DB_LIB_FILE"
 # shellcheck source=../lib/helper.sh
 [ -f "$HELPER_LIB_FILE" ] && . "$HELPER_LIB_FILE"
@@ -36,6 +38,8 @@ SECBOOT_LIB_FILE="/usr/local/lib/dcrypto/secboot.sh"
 [ -f "$GPG_LIB_FILE" ] && . "$GPG_LIB_FILE"
 #shellcheck source=../lib/secboot.sh
 [ -f "$SECBOOT_LIB_FILE" ] && . "$SECBOOT_LIB_FILE"
+#shellcheck source=../lib/hosts.sh
+[ -f "$HOSTS_LIB_FILE" ] && . "$HOSTS_LIB_FILE"
 #trap on_error_or_exit && exit 1 INT TERM HUP
 trap on_exit EXIT
 
@@ -189,18 +193,18 @@ help() {
     echo "    --verbose                           (Optional) Show detailed information"
     echo "    --json                              (Optional) Output raw JSON index"
     echo ""
-    echo "  cleanup                             Clean up DCrypto files and index"
+    echo "  cleanup                             Clean up dystopian-crypto files and index"
     echo "    --index <index>                     (Optional) Clean up specific index entry"
     echo "    --orphaned                          (Optional) Remove orphaned files not in index"
     echo "    --backups                           (Optional) Remove backup files"
     echo "    --dry-run                           (Optional) Show what would be cleaned without doing it"
     echo ""
-    echo "  backup                              Create backup of DCrypto directory"
-    echo "    --out <file>                        (Optional) Backup output file (default: /tmp/dcrypto-backup-YYYYMMDD_HHMMSS.tar)"
+    echo "  backup                              Create backup of dystopian-crypto directory"
+    echo "    --out <file>                        (Optional) Backup output file (default: /tmp/dystopian-crypto-backup-YYYYMMDD_HHMMSS.tar)"
     echo "    --compress                          (Optional) Compress backup with gzip"
     echo "    --exclude-keys                      (Optional) Exclude private keys from backup"
     echo ""
-    echo "  restore                             Restore DCrypto directory from backup"
+    echo "  restore                             Restore dystopian-crypto directory from backup"
     echo "    --from <file>                       (Required) Backup file to restore from"
     echo "    --force                             (Optional) Force restore without confirmation"
     echo ""
@@ -236,7 +240,7 @@ help() {
     echo "  $0 ssl list-ca --verbose"
     echo ""
     echo "  # Create encrypted backup"
-    echo "  $0 backup --compress --out /secure/dcrypto-backup.tar.gz"
+    echo "  $0 backup --compress --out /secure/dystopian-crypto-backup.tar.gz"
     echo ""
     echo ""
     echo "SSL FILES:"
@@ -982,7 +986,7 @@ main() {
             ;;
 
         --version|version|-V)
-            echos "dcrypto v$VERSION"
+            echos "dystopian-crypto v$VERSION"
             echos "A POSIX shell script for managing SSL certificates and GPG keys"
             ;;
 
