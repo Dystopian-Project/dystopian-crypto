@@ -1,16 +1,17 @@
 #!/bin/sh
-
 # shellcheck shell=sh
 # shellcheck disable=SC2001
+# shellcheck disable=SC2034
+
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-VAR_LIB_FILE="/usr/local/lib/dystopian-tools/variables.sh"
-DB_LIB_FILE="/usr/local/lib/dystopian-tools/hosts-db.sh"
-HELPER_LIB_FILE="/usr/local/lib/dystopian-tools/helper.sh"
-SSL_LIB_FILE="/usr/local/lib/dystopian-tools/ssl.sh"
-GPG_LIB_FILE="/usr/local/lib/dystopian-tools/gpg.sh"
-SECBOOT_LIB_FILE="/usr/local/lib/dystopian-tools/secboot.sh"
-HOSTS_LIB_FILE="/usr/local/lib/dystopian-tools/hosts.sh"
+VAR_LIB_FILE="/usr/lib/dystopian-tools/variables.sh"
+DB_LIB_FILE="/usr/lib/dystopian-tools/hosts-db.sh"
+HELPER_LIB_FILE="/usr/lib/dystopian-tools/helper.sh"
+SSL_LIB_FILE="/usr/lib/dystopian-tools/ssl.sh"
+GPG_LIB_FILE="/usr/lib/dystopian-tools/gpg.sh"
+SECBOOT_LIB_FILE="/usr/lib/dystopian-tools/secboot.sh"
+HOSTS_LIB_FILE="/usr/lib/dystopian-tools/hosts.sh"
 
 
 [ -f "$VAR_LIB_FILE" ] || VAR_LIB_FILE="$SCRIPT_DIR/../lib/variables.sh"
@@ -40,20 +41,63 @@ HOSTS_LIB_FILE="/usr/local/lib/dystopian-tools/hosts.sh"
 #trap on_error_or_exit && exit 1 INT TERM HUP
 trap on_exit EXIT
 
+VERBOSE=0
+DEBUG=0
+QUIET=0
+RAND="$(od -An -N2 -i /dev/urandom | tr -d ' ' | head -c 4)"
+
+
 help() {
-    echo "Usage: $0 <command> [subcommand] [options]"
-    echo ""
-    echo "A POSIX shell script to manage SSL certificates and GPG keys with strong encryption"
-    echo "and Argon2id key derivation for people who always forget OpenSSL syntax."
-    echo ""
-    echo "COMMANDS:"
-    echo "============="
-    echo ""
-    echo "  sync                     Synchronizes keys with the other hosts"
-    echo "    --host                   (Optional) Synchronizes dystopian-tools with another host"
-    echo "    --all                    (Optional) Synchronizes data among all hosts in database"
-    echo ""
+    cat <<EOF
+Usage: $0 <command> [options]
+
+Description:
+  Synchronize dystopian-hosts data with other hosts defined in the hosts database.
+
+
+Commands:
+
+  sync
+    --host HOST     Synchronize with a specific host from the hosts DB.
+    --all           Synchronize with all hosts in the hosts DB.
+
+
+Maintenance Commands:
+
+
+
+Other Commands:
+  -v | --verbose                      Show verbose status informations
+  -q | --quiet                        No output informations
+  --debug                             Show debug status informations
+  version                             Show version information
+  help                                Show this help message
+
+
+Examples:
+  # Sync with a single host
+  $0 sync --host example-host
+
+  # Sync with all hosts from the database
+  $0 sync --all
+
+
+Files:
+  System directory:      $DH_DIR/
+  User config directory: $DH_HOME/
+
+Database:
+  Hosts database (system): $DH_DIR/hosts-db.json
+  Hosts database (user):   $DH_HOME/hosts-db.json
+
+Notes:
+  • May require SSH access and credentials to target hosts
+  • Use --verbose/--debug for detailed output during synchronization
+  • System-wide operations may require elevated privileges to read/write $DH_DIR
+
+EOF
 }
+
 
 main() {
     # Check verbose
@@ -66,7 +110,6 @@ main() {
             --verbose|-v) VERBOSE=1; shift;;
             --quiet|-q) DEBUG=0 VERBOSE=0 QUIET=1; shift;;
             --debug) DEBUG=1; VERBOSE=1; shift;;
-            --user|-u) DC_USER="$2"; shift 2;;
             *)
                 # Append argument to new_args string, preserving spaces
                 if [ -z "$new_args" ]; then

@@ -1,4 +1,13 @@
-PREFIX = /usr/local
+PREFIX = /usr
+
+SHELL := sh
+
+.PHONY: \
+	install uninstall setup remove all backup \
+	setup-shared setup-dcrypto-part setup-dsecboot-part setup-dhosts-part \
+	remove-shared remove-dcrypto remove-hosts remove-secboot \
+	bkp-tool
+
 
 install: setup
 uninstall: remove
@@ -8,7 +17,6 @@ setup-dsecboot: setup-shared setup-dsecboot-part
 setup-dhosts: setup-shared setup-dhosts-part
 setup: setup-shared setup-dcrypto-part setup-dhosts-part setup-dsecboot-part
 all: setup
-backup: bkp-hosts bkp-secboot bkp-crypto
 
 setup-shared:
 	install -d $(PREFIX)/lib/dystopian-tools
@@ -32,7 +40,6 @@ setup-dcrypto-part:
 	install -m 640 lib/ssl.sh $(PREFIX)/lib/dystopian-tools/ssl.sh
 	install -m 640 lib/gpg.sh $(PREFIX)/lib/dystopian-tools/gpg.sh
 
-
 setup-dsecboot-part:
 	install -m 750 bin/dystopian-secboot $(PREFIX)/bin/dystopian-secboot
 	install -d -m 700 /etc/dystopian-secboot
@@ -48,20 +55,23 @@ setup-dhosts-part:
 	install -m 640 lib/crypto-db.sh $(PREFIX)/lib/dystopian-tools/hosts-db.sh
 	install -m 640 lib/hosts.sh $(PREFIX)/lib/dystopian-tools/hosts.sh
 
-
 remove-shared:
 	rm -f $(PREFIX)/lib/dystopian-tools/variables.sh
 	rm -f $(PREFIX)/lib/dystopian-tools/helper.sh
+	rm -f $(PREFIX)/lib/dystopian-tools/ssl.sh
+	rm -f $(PREFIX)/lib/dystopian-tools/gpg.sh
+	rm -f $(PREFIX)/lib/dystopian-tools/secboot.sh
+	rm -f $(PREFIX)/lib/dystopian-tools/crypto-db.sh
+	rm -f $(PREFIX)/lib/dystopian-tools/secboot-db.sh
+	rm -f $(PREFIX)/lib/dystopian-tools/hosts.sh
 	rmdir $(PREFIX)/lib/dystopian-tools || true
 	rm -f $(PREFIX)/share/doc/dystopian-tools/README.md
 	rmdir $(PREFIX)/share/doc/dystopian-tools || true
 
-
-remove-dcrypto: bkp-crypto
+remove-dcrypto: SRC = dystopian-crypto
+remove-dcrypto: bkp-tool
+remove-dcrypto:
 	rm -f $(PREFIX)/bin/dystopian-crypto
-	rm -f $(PREFIX)/lib/dystopian-tools/ssl.sh
-	rm -f $(PREFIX)/lib/dystopian-tools/gpg.sh
-	rm -f $(PREFIX)/lib/dystopian-tools/crypto-db.sh
 	rm -f /etc/dystopian-crypto/crypto-db.json
 	rmdir /etc/dystopian-crypto/ca/private || true
 	rmdir /etc/dystopian-crypto/ca || true
@@ -72,56 +82,32 @@ remove-dcrypto: bkp-crypto
 	rmdir /etc/dystopian-crypto/crl || true
 	rmdir /etc/dystopian-crypto || true
 
-
-remove-secboot: bkp-secboot
+remove-secboot: SRC = dystopian-secboot
+remove-secboot: bkp-tool
+remove-secboot:
 	rm -f $(PREFIX)/bin/dystopian-secboot
-	rm -f $(PREFIX)/lib/dystopian-tools/secboot.sh
-	rm -f $(PREFIX)/lib/dystopian-tools/secboot-db.sh
 	rm -f /etc/dystopian-secboot/secboot-db.json
 	rmdir /etc/dystopian-secboot/ms || true
 	rmdir /etc/dystopian-secboot/ || true
 	rmdir /etc/dystopian-secboot || true
 
-remove-hosts: bkp-hosts
+remove-hosts: SRC = dystopian-hosts
+remove-hosts: bkp-tool
+remove-hosts:
 	rm -f $(PREFIX)/bin/dystopian-hosts
-	rm -f $(PREFIX)/lib/dystopian-tools/hosts.sh
 	rm -f $(PREFIX)/lib/dystopian-tools/hosts-db.sh
 	rm -f /etc/dystopian-hosts/hosts-db.json
 	rmdir /etc/dystopian-hosts/ || true
 	rmdir /etc/dystopian-hosts || true
 
 
-bkp-crypto:
-	src="dystopian-crypto"; \
-	if [ -d "/etc/$$src" ]; then \
-		n=0; \
-		while [ -d "/etc/$$src.bkp.$$n.tar.gz" ]; do \
-			n=$$((n + 1)); \
-		done; \
-		tar -czf "/etc/$$src.bkp.$$n.tar.gz" "/etc/§§src" \
-		echo "Created backup: /etc/$$src.bkp.$$n"; \
-	fi
-
-
-bkp-secboot:
-	src="dystopian-secboot"; \
-	if [ -d "/etc/$$src" ]; then \
-		n=0; \
-		while [ -d "/etc/$$src.bkp.$$n.tar.gz" ]; do \
-			n=$$((n + 1)); \
-		done; \
-		tar -czf "/etc/$$src.bkp.$$n.tar.gz" "/etc/§§src" \
-		echo "Created backup: /etc/$$src.bkp.$$n"; \
-	fi
-
-
-bkp-hosts:
-	src="dystopian-hosts"; \
-	if [ -d "/etc/$$src" ]; then \
-		n=0; \
-		while [ -d "/etc/$$src.bkp.$$n.tar.gz" ]; do \
-			n=$$((n + 1)); \
-		done; \
-		tar -czf "/etc/$$src.bkp.$$n.tar.gz" "/etc/§§src" \
-		echo "Created backup: /etc/$$src.bkp.$$n"; \
-	fi
+bkp-tool:
+	@set -eu; \
+	. $(PREFIX)/lib/dystopian-tools/variables.sh; \
+	. $(PREFIX)/lib/dystopian-tools/helper.sh; \
+	: "$${SRC:?Set SRC to a directory name (e.g. dystopian-crypto) or absolute path}"; \
+	case "$$SRC" in \
+		/*) _path="$$SRC" ;; \
+		*)  _path="/etc/$$SRC" ;; \
+	esac; \
+	backup_targz "$$_path"
