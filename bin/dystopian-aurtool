@@ -1,0 +1,145 @@
+#!/bin/sh
+# shellcheck shell=sh
+# shellcheck disable=SC2001
+# shellcheck disable=SC2034
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+VAR_LIB_FILE="/usr/lib/dystopian-tools/variables.sh"
+DB_LIB_FILE="/usr/lib/dystopian-tools/secboot-db.sh"
+HELPER_LIB_FILE="/usr/lib/dystopian-tools/helper.sh"
+SSL_LIB_FILE="/usr/lib/dystopian-tools/ssl.sh"
+GPG_LIB_FILE="/usr/lib/dystopian-tools/gpg.sh"
+SECBOOT_LIB_FILE="/usr/lib/dystopian-tools/secboot.sh"
+HOSTS_LIB_FILE="/usr/lib/dystopian-tools/hosts.sh"
+
+
+[ -f "$VAR_LIB_FILE" ] || VAR_LIB_FILE="$SCRIPT_DIR/../lib/variables.sh"
+[ -f "$DB_LIB_FILE" ] || DB_LIB_FILE="$SCRIPT_DIR/../lib/secboot-db.sh"
+[ -f "$HELPER_LIB_FILE" ] || HELPER_LIB_FILE="$SCRIPT_DIR/../lib/helper.sh"
+[ -f "$SSL_LIB_FILE" ] || SSL_LIB_FILE="$SCRIPT_DIR/../lib/ssl.sh"
+[ -f "$GPG_LIB_FILE" ] || GPG_LIB_FILE="$SCRIPT_DIR/../lib/gpg.sh"
+[ -f "$SECBOOT_LIB_FILE" ] || SECBOOT_LIB_FILE="$SCRIPT_DIR/../lib/secboot.sh"
+[ -f "$HOSTS_LIB_FILE" ] || HOSTS_LIB_FILE="$SCRIPT_DIR/../lib/hosts.sh"
+
+
+# Source library files
+# shellcheck source=../lib/variables.sh
+[ -f "$VAR_LIB_FILE" ] && . "$VAR_LIB_FILE"
+# shellcheck source=../lib/secboot-db.sh
+[ -f "$DB_LIB_FILE" ] && . "$DB_LIB_FILE"
+# shellcheck source=../lib/helper.sh
+[ -f "$HELPER_LIB_FILE" ] && . "$HELPER_LIB_FILE"
+# shellcheck source=../lib/ssl.sh
+[ -f "$SSL_LIB_FILE" ] && . "$SSL_LIB_FILE"
+# shellcheck source=../lib/gpg.sh
+[ -f "$GPG_LIB_FILE" ] && . "$GPG_LIB_FILE"
+#shellcheck source=../lib/secboot.sh
+[ -f "$SECBOOT_LIB_FILE" ] && . "$SECBOOT_LIB_FILE"
+#shellcheck source=../lib/hosts.sh
+[ -f "$HOSTS_LIB_FILE" ] && . "$HOSTS_LIB_FILE"
+#trap on_error_or_exit && exit 1 INT TERM HUP
+trap on_exit EXIT
+
+VERBOSE=0
+DEBUG=0
+QUIET=0
+RAND="$(od -An -N2 -i /dev/urandom | tr -d ' ' | head -c 4)"
+
+
+help() {
+    cat <<EOF
+Usage: $0 <command> [options]
+
+Description:
+  Manage AUR-related versioning and packaging tasks.
+
+
+Commands:
+
+  version
+    --getversion    Show the current package version.
+    --bumprelease   Bump the package release number.
+    --package       Build and package the project.
+
+
+Maintenance Commands:
+
+
+
+Other Commands:
+  -v | --verbose                      Show verbose status informations
+  -q | --quiet                        No output informations
+  --debug                             Show debug status informations
+  version                             Show version information
+  help                                Show this help message
+
+
+Examples:
+  # Show current version
+  $0 version --getversion
+
+  # Bump the package release number
+  $0 version --bumprelease
+
+  # Build and package the project
+  $0 version --package
+
+Files:
+  System directory:      $DA_DIR/
+  User config directory: $DA_HOME/
+
+Database:
+  AUR tool database file: ${DA_DB:-N/A}
+
+Notes:
+  • Version and packaging tasks may interact with PKGBUILD and VCS metadata
+  • Use --verbose/--debug for detailed build and versioning logs
+
+EOF
+}
+
+
+
+main() {
+    # Check verbose
+    new_args=""
+
+    # Preprocess arguments to check for --verbose, -v, or --debug
+    while [ $# -gt 0 ]; do
+        # shellcheck disable=SC2034
+        case "$1" in
+            --verbose|-v) VERBOSE=1; shift;;
+            --quiet|-q) DEBUG=0 VERBOSE=0 QUIET=1; shift;;
+            --debug) DEBUG=1; VERBOSE=1; shift;;
+            *)
+                # Append argument to new_args string, preserving spaces
+                if [ -z "$new_args" ]; then
+                    new_args="$1"
+                else
+                    new_args="$new_args $1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    # Restore the modified argument list
+    eval set -- "$new_args"
+
+    case "$1" in
+        version)
+            shift
+            bump=""
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    -help|--help) shorthelp "version"; exit 0;;
+                    *) echoe "Unknown option: $1"; shorthelp "version"; exit 1;;
+                esac
+            done
+            host_sync ""
+            ;;
+        -h|--help|-help) help; exit 0;;
+        *) echoe "Unknown command: $1"; help; exit 1;;
+    esac
+}
+
+main "$@"
