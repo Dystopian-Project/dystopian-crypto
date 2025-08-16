@@ -2,8 +2,7 @@ name: Auto Sync Fork
 
 on:
   schedule:
-    # runs every day at 01:00 UTC
-    - cron: '0 1 * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
