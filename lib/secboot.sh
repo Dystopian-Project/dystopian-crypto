@@ -7,10 +7,8 @@ _cert_to_esl() {
     cert_path="${1:+$(absolutepath "$1")}"
     cert_path="${1:-})"
     esl_out="$2"
-
     cert_file="${cert_path:+$(filename "$cert_path")}"
     cert_dir="${cert_path:+$(dirpath "$cert_path")}"
-
 
 }
 

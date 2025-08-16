@@ -1,6 +1,7 @@
 #!/bin/sh
 # shellcheck shell=sh
 # shellcheck disable=SC2001
+# shellcheck disable=SC2034
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "User must be root"
@@ -8,13 +9,13 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-VAR_LIB_FILE="/usr/local/lib/dystopian-tools/variables.sh"
-DB_LIB_FILE="/usr/local/lib/dystopian-tools/secboot-db.sh"
-HELPER_LIB_FILE="/usr/local/lib/dystopian-tools/helper.sh"
-SSL_LIB_FILE="/usr/local/lib/dystopian-tools/ssl.sh"
-GPG_LIB_FILE="/usr/local/lib/dystopian-tools/gpg.sh"
-SECBOOT_LIB_FILE="/usr/local/lib/dystopian-tools/secboot.sh"
-HOSTS_LIB_FILE="/usr/local/lib/dystopian-tools/hosts.sh"
+VAR_LIB_FILE="/usr/lib/dystopian-tools/variables.sh"
+DB_LIB_FILE="/usr/lib/dystopian-tools/secboot-db.sh"
+HELPER_LIB_FILE="/usr/lib/dystopian-tools/helper.sh"
+SSL_LIB_FILE="/usr/lib/dystopian-tools/ssl.sh"
+GPG_LIB_FILE="/usr/lib/dystopian-tools/gpg.sh"
+SECBOOT_LIB_FILE="/usr/lib/dystopian-tools/secboot.sh"
+HOSTS_LIB_FILE="/usr/lib/dystopian-tools/hosts.sh"
 
 
 [ -f "$VAR_LIB_FILE" ] || VAR_LIB_FILE="$SCRIPT_DIR/../lib/variables.sh"
@@ -45,18 +46,67 @@ HOSTS_LIB_FILE="/usr/local/lib/dystopian-tools/hosts.sh"
 trap on_exit EXIT
 
 help() {
-    echo "Usage: $0 <command> [subcommand] [options]"
-    echo ""
-    echo "A POSIX shell script to manage SSL certificates and GPG keys with strong encryption"
-    echo "and Argon2id key derivation for people who always forget OpenSSL syntax."
-    echo ""
-    echo "COMMANDS:"
-    echo "============="
-    echo ""
-    echo "  init                     Setup & initialize dystopian-secboot with host secure boot parameters"
-    echo "    --something              bla bla"
-    echo ""
+    cat <<EOF
+Usage: $0 <command> [options]
+
+Description:
+  Manage Secure Boot setup, key enrollment, and status reporting.
+
+
+Commands:
+
+  init
+    --compat         Create keys using broadly compatible settings. (Default: false)
+    --tpm            Use TPM-backed keys if supported. (Default: false)
+
+  enroll
+    --ms             Fetch and enroll Microsoft-provided certificates where applicable.
+    --mok            Enroll Machine Owner Key (MOK).
+    --pk             Enroll Platform Key (PK).
+    --kek            Enroll Key Exchange Key (KEK).
+    --db             Enroll allowed database (db) keys/certs.
+
+  status
+    Show current Secure Boot state and enrolled keys.
+
+Other Commands:
+  -v | --verbose                      Show verbose status informations
+  -q | --quiet                        No output informations
+  --user <name>                       Give group ownership to user
+  --debug                             Show debug status informations
+  version                             Show version information
+  help                                Show this help message
+
+
+Examples:
+  # Initialize Secure Boot with broadly compatible keys
+  $0 init --compat
+
+  # Enroll Microsoft and db certificates
+  $0 enroll --ms --db
+
+  # Show current Secure Boot status
+  $0 status
+
+Files:
+  Secure Boot directory: $DS_DIR/
+  Microsoft objects dir: $DC_MS_DIR/
+
+Database:
+  Secure Boot database file: $DS_DB
+
+Notes:
+  • Requires root privileges for key creation and enrollment
+  • May use efitools, openssl, bootctl, and system firmware variables
+  • Key enrollment modifies UEFI variables; ensure you have backups and recovery options
+
+EOF
 }
+
+VERBOSE=0
+DEBUG=0
+QUIET=0
+RAND="$(od -An -N2 -i /dev/urandom | tr -d ' ' | head -c 4)"
 
 
 main() {
@@ -70,7 +120,6 @@ main() {
             --verbose|-v) VERBOSE=1; shift;;
             --quiet|-q) DEBUG=0 VERBOSE=0 QUIET=1; shift;;
             --debug) DEBUG=1; VERBOSE=1; shift;;
-            --user|-u) DC_USER="$2"; shift 2;;
             *)
                 # Append argument to new_args string, preserving spaces
                 if [ -z "$new_args" ]; then
@@ -88,11 +137,13 @@ main() {
     case "$1" in
         init)
             shift
-            host="" all=""
+            compat="" tpm=""
             while [ $# -gt 0 ]; do
                 case "$1" in
-                    -help|--help) shorthelp "sync"; exit 0;;
-                    *) echoe "Unknown option: $1"; shorthelp "sync"; exit 1;;
+                    --compat|--compatibility|-c) compat="true"; shift;;
+                    --tpm|-tpm|-t) tpm="true"; shift;;
+                    -help|--help|-h) shorthelp "init"; exit 0;;
+                    *) echoe "Unknown option: $1"; shorthelp "init"; exit 1;;
                 esac
             done
             host_sync ""
